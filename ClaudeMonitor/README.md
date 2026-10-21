@@ -18,43 +18,28 @@ The orb floats above every app and every desktop, including full-screen apps. Dr
 - **Menu bar icon** — refresh, hide/show, size, sign in again, launch at login, quit.
 - **Remembers everything** — position, size, and unchecked cards survive restarts.
 
-## Install
+## Get it for your platform
 
-Requirements: macOS 12 or newer, Xcode Command Line Tools (the installer prompts for them if missing).
+| Platform | Status | Go to |
+| --- | --- | --- |
+| macOS | Stable, in daily use | [`macos/`](macos/) |
+| Linux | In testing | coming soon |
+| Windows | In testing | coming soon |
 
-1. Download or clone this folder.
-2. Double-click **`Install.command`** (if macOS refuses, right-click → Open). It compiles the app into `~/Applications/ClaudeUsageOrb.app`, turns on launch-at-login, and starts it. Takes about 20 seconds.
-3. A sign-in window opens the first time. Sign in to claude.ai once (Google sign-in works). It closes by itself and the orb starts showing your numbers.
+All versions share the same orb (`orb.html`) and the same features; only the native shell differs.
 
-To rebuild after editing the source, run `Install.command` again.
+## Project layout
 
-## Using it
-
-| Action | Result |
-| --- | --- |
-| Drag the orb | Move it anywhere; position is remembered |
-| Scroll / pinch on the orb | Resize (0.6× – 2.5×) |
-| Double-click the orb | Refresh now |
-| Hover over a countdown pill | Shows the exact reset time |
-| Right-click the orb, or click the menu bar drop icon | Menu |
-| Click a card | Open that chat |
-| **⚑ Allow** (blue card) | Open the chat to grant the permission; card stays until the chat finishes |
-| **✓ Check** (green card) | Open the chat and remove the card |
-| Menu → Clear finished chats | Remove all green cards at once |
+```
+ClaudeMonitor/
+├── README.md          this overview
+├── docs/overview.png
+└── macos/             native Swift app + installer
+```
 
 ## How it works
 
-- `src/main.swift` — the native app: a transparent, non-activating `NSPanel` that floats at `.floating` level across all Spaces, a hidden `WKWebView` that holds your claude.ai sign-in and reads usage and chat status, the menu bar item, and the chat tracker.
-- `src/orb.html` — the orb itself, drawn on a `<canvas>`: liquid waves, bubbles, the HUD ring, countdown pills, and the activity cards.
-- `build.sh` — compiles with `swiftc`, assembles the `.app` bundle, ad-hoc signs it, and writes a LaunchAgent for launch-at-login.
-
-Usage comes from the same endpoint the claude.ai settings page uses; chat activity from each conversation's `live_status`. Both are unofficial and may change — if the orb shows **Offline**, that is the first thing to check. The app talks only to claude.ai and stores your sign-in in its own WebKit data store.
-
-Logs: `~/Library/Logs/ClaudeUsageOrb/orb.log`.
-
-## Uninstall
-
-Quit from the menu, then delete `~/Applications/ClaudeUsageOrb.app` and `~/Library/LaunchAgents/com.yufan.claude-usage-orb.plist`.
+Usage comes from the same endpoint the claude.ai settings page uses; chat activity from each conversation's `live_status`. Both are unofficial and may change — if the orb shows **Offline**, that is the first thing to check. The app talks only to claude.ai and keeps your sign-in in its own private browser store.
 
 ## License
 
