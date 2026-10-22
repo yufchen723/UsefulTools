@@ -1,0 +1,14 @@
+{
+  "name": "claude-monitor",
+  "version": "1.0.0",
+  "description": "Floating Claude usage orb with chat activity cards",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "author": "Yufan Chen",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.4.11"
+  }
+}
