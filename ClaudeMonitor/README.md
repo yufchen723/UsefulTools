@@ -25,7 +25,7 @@ The orb floats above every app and every desktop, including full-screen apps. Dr
 
 | Platform | Status | Go to |
 | --- | --- | --- |
-| macOS | Stable, in daily use | [`macos/`](macos/) |
+| macOS | Stable, in daily use.<br>Monitors Chats, Cowork tasks, and Claude Code (cloud + terminal). | [`macos/`](macos/) |
 | Linux | In testing | coming soon |
 | Windows | In testing | coming soon |
 
