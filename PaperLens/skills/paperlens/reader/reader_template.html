@@ -1,0 +1,1006 @@
+<title>__TITLE__</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap">
+<style>
+/* Layout: one-screen reader — slim top bar, scrolling page column, slide-over drawer for Contents/Notes, floating Ask box. */
+:root{
+  --bg:#eef0f3; --paper:#ffffff; --fg:#1d2430; --muted:#5d6878; --rule:#d5dae2; --panel:#f8f9fb;
+  --accent:#2b5c8a; --accent-ink:#ffffff; --accent-soft:rgba(43,92,138,.10);
+  --note:#f4c430; --note-soft:rgba(244,196,48,.32); --ok:#2f7d4f; --warn:#a2591b;
+  --f-ui:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  --f-title:"Source Serif 4",Georgia,"Times New Roman",serif;
+  --bar:48px;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#15181d; --paper:#ffffff; --fg:#e6e9ee; --muted:#9aa4b2; --rule:#2c323b; --panel:#1c2027;
+  --accent:#7fb0de; --accent-ink:#0f1720; --accent-soft:rgba(127,176,222,.14);
+  --note:#f4c430; --note-soft:rgba(244,196,48,.38); --ok:#6cc08f; --warn:#e0a060; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#15181d; --paper:#ffffff; --fg:#e6e9ee; --muted:#9aa4b2; --rule:#2c323b; --panel:#1c2027;
+  --accent:#7fb0de; --accent-ink:#0f1720; --accent-soft:rgba(127,176,222,.14);
+  --note:#f4c430; --note-soft:rgba(244,196,48,.38); --ok:#6cc08f; --warn:#e0a060; color-scheme:dark}
+[hidden]{display:none!important}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--fg);font:14px/1.5 var(--f-ui);overflow:hidden}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--panel)}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* top bar */
+#bar{position:sticky;top:env(safe-area-inset-top,0px);height:var(--bar);display:flex;align-items:center;gap:8px;
+  padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px));
+  background:var(--panel);border-bottom:1px solid var(--rule);z-index:5;min-width:0}
+#bar .title{font:600 14px/1.2 var(--f-title);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 auto}
+.seg{display:inline-flex;border:1px solid var(--rule);border-radius:7px;overflow:hidden;flex:none}
+.seg button{border:0;background:transparent;padding:5px 10px;cursor:pointer;font-size:13px;white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.icon{border:1px solid var(--rule);background:transparent;border-radius:7px;height:30px;min-width:30px;padding:0 8px;cursor:pointer;font-size:13px;flex:none;white-space:nowrap}
+.icon:hover,.seg button:hover:not([aria-pressed="true"]){background:var(--accent-soft)}
+#pageno{font:500 12px var(--f-mono);color:var(--muted);flex:none;white-space:nowrap}
+.badge{display:inline-block;min-width:18px;padding:0 5px;border-radius:9px;background:var(--note);color:#3a2c00;font:600 11px/18px var(--f-mono);text-align:center;margin-left:4px}
+
+/* reading column */
+#scroll{position:absolute;top:calc(var(--bar) + env(safe-area-inset-top,0px));bottom:0;left:0;right:0;overflow:auto;
+  padding-block:16px 80px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+#pages{display:flex;flex-direction:column;align-items:center;gap:14px}
+.page{position:relative;background:var(--paper);box-shadow:0 1px 3px rgba(0,0,0,.18);max-width:100%}
+.page canvas{display:block;width:100%;height:100%}
+.page .pnum{position:absolute;left:-2px;top:-14px;font:500 10px var(--f-mono);color:var(--muted)}
+.page.flash{animation:flash 1.2s ease-out}
+@keyframes flash{0%{box-shadow:0 0 0 4px var(--note)}100%{box-shadow:0 1px 3px rgba(0,0,0,.18)}}
+@media (prefers-reduced-motion:reduce){.page.flash{animation:none;outline:3px solid var(--note)}}
+
+/* pdf.js text layer (minimal) */
+.textLayer{position:absolute;inset:0;overflow:hidden;line-height:1;text-align:initial;opacity:1;z-index:2;
+  -webkit-text-size-adjust:none;text-size-adjust:none;forced-color-adjust:none;transform-origin:0 0}
+.textLayer span,.textLayer br{color:transparent;position:absolute;white-space:pre;cursor:text;transform-origin:0% 0%}
+.textLayer ::selection{background:rgba(43,92,138,.35)}
+.textLayer .endOfContent{display:block;position:absolute;inset:100% 0 0;z-index:-1;cursor:default;user-select:none}
+.textLayer span.hl{background:var(--note-soft);border-radius:2px}
+.pin{position:absolute;left:-12px;width:24px;height:24px;border-radius:50%;border:0;background:var(--note);color:#3a2c00;
+  font:600 11px/24px var(--f-mono);cursor:pointer;z-index:3;box-shadow:0 1px 3px rgba(0,0,0,.25);padding:0}
+
+/* drawer */
+#drawer{position:absolute;top:calc(var(--bar) + env(safe-area-inset-top,0px));bottom:0;right:0;width:min(var(--drawer-w,380px),92vw);
+  background:var(--panel);border-left:1px solid var(--rule);z-index:6;display:flex;flex-direction:column;
+  padding-right:env(safe-area-inset-right,0px)}
+#drawer:not(.open){display:none}
+#drawer.open{transform:none}
+/* drag the drawer's left edge to widen it (her request 2026-10-21) */
+#drawerGrip{position:absolute;left:-5px;top:0;bottom:0;width:10px;cursor:col-resize;z-index:2;touch-action:none}
+#drawerGrip::after{content:'';position:absolute;left:4px;top:0;bottom:0;width:2px;background:transparent;transition:background .15s}
+#drawerGrip:hover::after,#drawer.resizing #drawerGrip::after{background:var(--accent)}
+#drawer.resizing{user-select:none}
+#drawer .tabs{display:flex;gap:4px;padding:10px 12px;border-bottom:1px solid var(--rule)}
+#drawer .tabs button{flex:1;border:1px solid var(--rule);background:transparent;border-radius:7px;padding:5px;cursor:pointer}
+#drawer .tabs button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+#drawer .body{overflow:auto;padding:10px 12px 40px;min-height:0;flex:1}
+.grp{font:600 11px var(--f-ui);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:14px 0 4px}
+.toc a{display:flex;gap:8px;justify-content:space-between;padding:5px 6px;border-radius:6px;color:var(--fg);text-decoration:none;font-size:13px}
+.toc a:hover{background:var(--accent-soft)}
+.toc a span:last-child{font:500 11px var(--f-mono);color:var(--muted);flex:none}
+.note{border:1px solid var(--rule);border-left:4px solid var(--note);border-radius:8px;background:var(--bg);padding:9px 10px;margin:0 0 10px}
+.note .meta{display:flex;justify-content:space-between;gap:8px;font:500 11px var(--f-mono);color:var(--muted)}
+.note blockquote{margin:6px 0;padding:0 0 0 8px;border-left:2px solid var(--rule);font-style:italic;color:var(--muted);
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.note .q{font-weight:600;margin:6px 0 2px}
+.note .a{white-space:pre-wrap;margin:0}
+.note button{border:1px solid var(--rule);background:transparent;border-radius:6px;padding:2px 8px;cursor:pointer;font-size:12px}
+/* collapse / expand notes (her request 2026-10-21) */
+.note .meta,.note .q{cursor:pointer}
+.note .meta .tog{flex:none;border:0;background:transparent;padding:0 6px 0 0;margin:0;font-size:14px;line-height:15px;color:var(--muted);cursor:pointer}
+.note .meta .where{flex:1;min-width:0}
+.note.collapsed{padding-bottom:7px}
+.note.collapsed blockquote,.note.collapsed .a,.note.collapsed .pending,.note.collapsed .acts{display:none}
+.note.collapsed .q{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:0}
+.notes-bar{display:flex;justify-content:flex-end;gap:6px;margin:0 0 8px}
+.notes-bar button{border:1px solid var(--rule);background:transparent;color:var(--fg);border-radius:6px;padding:2px 8px;cursor:pointer;font-size:12px}
+.empty{color:var(--muted);font-size:13px;line-height:1.55}
+.pending{color:var(--warn);font-size:12.5px;margin:2px 0 0}
+.pin.wait{background:var(--panel);color:var(--muted);border:1px dashed var(--muted)}
+
+/* floating ask */
+#selBar{position:absolute;z-index:8;display:flex;gap:6px}
+#selBar button{border:0;border-radius:16px;background:var(--accent);color:var(--accent-ink);
+  padding:5px 12px;font-weight:600;font-size:13px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.25);white-space:nowrap}
+#selBar #trBtn{background:var(--panel);color:var(--accent);box-shadow:0 2px 8px rgba(0,0,0,.25),inset 0 0 0 1.5px var(--accent)}
+
+/* translator */
+#tr{position:fixed;z-index:9;width:min(400px,calc(100vw - 24px));max-height:min(70vh,520px);display:flex;flex-direction:column;
+  background:var(--panel);border:1px solid var(--rule);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.28)}
+#tr .head{display:flex;align-items:center;gap:6px;padding:9px 10px;border-bottom:1px solid var(--rule)}
+#tr .head,#ask .head{cursor:move;touch-action:none;user-select:none;-webkit-user-select:none}
+#tr .head select,#tr .head button,#ask .head button{cursor:pointer}
+#tr.dragging,#ask.dragging{opacity:.92;box-shadow:0 12px 36px rgba(0,0,0,.35)}
+.grip{color:var(--muted);font-size:12px;letter-spacing:-2px;margin-right:2px;flex:none}
+/* cover: the article header as shown on the publisher's site */
+.cover{display:block;max-width:100%;background:#fff;border-radius:6px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.18);text-decoration:none}
+.cover img{display:block;width:100%;height:auto}
+.cover:hover{box-shadow:0 0 0 2px var(--accent),0 1px 3px rgba(0,0,0,.18)}
+#tr .from{font:500 12px var(--f-mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+#tr .arrow{color:var(--muted);flex:none}
+#tr select{flex:1 1 auto;min-width:0;max-width:200px;border:1px solid var(--rule);border-radius:7px;background:var(--bg);color:var(--fg);
+  font:13px var(--f-ui);padding:3px 6px}
+#tr .head .icon{margin-left:auto;height:26px;min-width:26px;padding:0 6px}
+#trBody{overflow:auto;padding:10px 12px 12px;font-size:14px;line-height:1.5}
+#trBody .term{display:flex;align-items:center;gap:8px;font:600 17px/1.3 var(--f-title)}
+#trBody .ipa{font:14px var(--f-mono);color:var(--muted);margin:2px 0 6px}
+#trBody .main{font-size:16px;font-weight:600;margin:4px 0 6px}
+#trBody ol{margin:4px 0 8px;padding-left:1.3em}
+#trBody li{margin:2px 0}
+#trBody .pos{font:500 11px var(--f-mono);color:var(--accent);margin-right:5px}
+#trBody .ctx{border-top:1px solid var(--rule);padding-top:7px;margin-top:6px;font-size:13px}
+#trBody .ctx b{font-weight:600;color:var(--muted);font-size:11px;letter-spacing:.04em;text-transform:uppercase;display:block}
+#trBody blockquote{margin:0 0 8px;max-height:84px;overflow:auto;padding:5px 8px;border-left:3px solid var(--rule);color:var(--muted);font-size:12.5px}
+#trBody .out{white-space:pre-wrap;margin:0}
+#trBody .say{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+#trBody .say button,#trBody .term button,#trBody .main button{border:1px solid var(--rule);background:transparent;border-radius:12px;padding:1px 8px;font-size:12px;cursor:pointer}
+#trBody .say button:hover,#trBody .term button:hover,#trBody .main button:hover{background:var(--accent-soft)}
+#trBody .msg{color:var(--muted);font-size:13px}
+#trBody .msg.warn{color:var(--warn)}
+#ask{position:fixed;z-index:9;left:max(12px,env(safe-area-inset-left,0px));bottom:max(12px,env(safe-area-inset-bottom,0px));
+  width:min(420px,calc(100vw - 24px));background:var(--panel);border:1px solid var(--rule);border-radius:12px;
+  box-shadow:0 8px 28px rgba(0,0,0,.28);padding:12px;display:flex;flex-direction:column;gap:8px}
+#ask .head{display:flex;justify-content:space-between;align-items:center;font-weight:600}
+#ask .head span{font:500 11px var(--f-mono);color:var(--muted)}
+#ask blockquote{margin:0;max-height:96px;overflow:auto;padding:6px 8px;border-left:3px solid var(--note);background:var(--note-soft);
+  font-size:12.5px;color:var(--fg);border-radius:0 6px 6px 0}
+#ask textarea{width:100%;min-height:76px;resize:vertical;border:1px solid var(--rule);border-radius:8px;padding:8px;
+  background:var(--bg);color:var(--fg);font:inherit;box-sizing:border-box}
+.presets{display:flex;flex-wrap:wrap;gap:6px}
+.presets button{border:1px solid var(--rule);background:transparent;border-radius:12px;padding:2px 9px;font-size:12px;cursor:pointer}
+.presets button:hover{background:var(--accent-soft)}
+#ask .row{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+#send{border:0;border-radius:8px;background:var(--accent);color:var(--accent-ink);padding:6px 14px;font-weight:600;cursor:pointer}
+#send:disabled{opacity:.55;cursor:default}
+#askMsg{font-size:12px;color:var(--muted);min-height:1em}
+#askMsg.ok{color:var(--ok)} #askMsg.warn{color:var(--warn)}
+#pop{position:fixed;z-index:8;width:min(340px,80vw);max-height:min(70vh,560px);overflow:auto;background:var(--panel);border:1px solid var(--rule);border-radius:10px;
+  box-shadow:0 6px 20px rgba(0,0,0,.25);padding:10px 12px;font-size:13px}
+#pop .head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:-4px -6px 4px;padding:2px 6px;cursor:move;touch-action:none;user-select:none;-webkit-user-select:none;color:var(--muted);font:500 11px var(--f-mono)}
+#pop .head .x{border:0;background:transparent;font-size:15px;line-height:1;padding:0 2px;cursor:pointer;color:var(--muted)}
+#pop.dragging{opacity:.92;box-shadow:0 12px 36px rgba(0,0,0,.35)}
+#pop .a{white-space:pre-wrap;margin:4px 0 0}
+#pop button{border:1px solid var(--rule);background:transparent;border-radius:6px;padding:2px 8px;cursor:pointer;font-size:12px}
+.acts{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 0}
+button.del{color:var(--warn)}
+button.del.armed{background:#f8c9bf;color:#000;border-color:#c0392b;font-weight:600}
+#toast{position:fixed;left:50%;bottom:max(18px,env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:11;display:flex;gap:12px;align-items:center;
+  max-width:calc(100vw - 32px);background:var(--fg);color:var(--bg);padding:8px 14px;border-radius:9px;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.3)}
+#toast button{border:0;background:transparent;color:var(--note);font-weight:600;cursor:pointer;padding:0}
+#loading{color:var(--muted);text-align:center;padding:40px 0}
+#summary{position:relative;max-width:780px;margin:0 auto;background:var(--panel);border:1px solid var(--rule);border-radius:10px;
+  padding:22px max(18px,4%) 40px;font-size:calc(14.5px * var(--sum-scale,1));line-height:1.6;color:var(--fg)}
+#summary h1{font:600 1.35em/1.25 var(--f-title);text-wrap:balance;margin:0 0 .6em}
+#summary h2{font:600 1.12em/1.3 var(--f-title);margin:1.6em 0 .5em;padding-top:.6em;border-top:1px solid var(--rule)}
+#summary h3{font-size:1em;margin:1.2em 0 .4em}
+#summary p,#summary li{margin:.45em 0}
+#summary ul,#summary ol{padding-left:1.25em}
+#summary a{color:var(--accent)}
+#summary blockquote{margin:.6em 0;padding:.1em .9em;border-left:3px solid var(--rule);color:var(--muted)}
+#summary code{font:0.9em var(--f-mono);background:var(--accent-soft);padding:0 .25em;border-radius:3px}
+#summary pre{overflow-x:auto;background:var(--bg);padding:10px;border-radius:6px;position:relative}
+#summary pre .copy{position:absolute;top:6px;right:6px;border:1px solid var(--rule);background:var(--panel);color:var(--fg);border-radius:6px;font:12px var(--f-ui);padding:2px 8px;cursor:pointer;opacity:.85}
+#summary pre .copy:hover{opacity:1;background:var(--accent-soft)}
+/* timeline tab (review papers) */
+.tl-bar{position:sticky;top:0;z-index:2;display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--panel);padding:10px 0 12px;margin:0 0 6px;border-bottom:1px solid var(--rule)}
+.tl-bar input,.tl-bar select{border:1px solid var(--rule);border-radius:7px;background:var(--bg);color:var(--fg);font:13px var(--f-ui);padding:4px 8px;min-width:0}
+.tl-bar input{flex:1 1 180px}
+.tl-bar button{border:1px solid var(--accent);border-radius:14px;background:transparent;color:var(--accent);font:600 12px var(--f-ui);padding:4px 12px;cursor:pointer;white-space:nowrap}
+.tl-bar button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.tl-count{font:500 12px var(--f-mono);color:var(--muted)}
+.tl-list{position:relative;padding-left:26px}
+.tl-list::before{content:"";position:absolute;left:8px;top:6px;bottom:6px;width:2px;background:var(--rule)}
+#summary .tl-list h2.tl-year{position:relative;border:0;margin:1.2em 0 .4em;padding:0;font:600 1.05em/1.2 var(--f-mono);color:var(--accent)}
+#summary .tl-list h2.tl-year::before{content:"";position:absolute;left:-24px;top:.25em;width:12px;height:12px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--panel)}
+.tl-item{position:relative;border:1px solid var(--rule);border-radius:9px;background:var(--bg);padding:9px 12px;margin:0 0 9px}
+.tl-item::before{content:"";position:absolute;left:-22px;top:15px;width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.tl-item.key{border-left:4px solid var(--accent)}
+.tl-item.key::before{background:var(--accent)}
+.tl-title{font-weight:600;line-height:1.35}
+.tl-title a{color:var(--fg);text-decoration:underline;text-decoration-color:var(--rule);text-underline-offset:3px}
+.tl-title a:hover{color:var(--accent);text-decoration-color:var(--accent)}
+.tl-meta{font-size:12.5px;color:var(--muted);margin:2px 0 4px}
+.tl-role{margin:4px 0 !important}
+.tl-where{font-size:12.5px;color:var(--muted);margin:2px 0 0 !important}
+.tl-where a{color:var(--accent);cursor:pointer}
+.tl-tag{display:inline-block;font:600 10.5px/16px var(--f-ui);letter-spacing:.03em;text-transform:uppercase;border-radius:8px;padding:0 6px;margin-right:4px;background:var(--accent-soft);color:var(--accent)}
+.tl-tag.landmark{background:var(--note-soft);color:var(--fg)}
+.tl-none{color:var(--muted)}
+#summary pre code{background:none;padding:0}
+#summary .tw{overflow-x:auto;margin:.8em 0}
+#summary table{border-collapse:collapse;font-size:.92em;min-width:100%}
+#summary th,#summary td{border-bottom:1px solid var(--rule);padding:5px 8px;text-align:left;vertical-align:top}
+#summary th{font-weight:600;background:var(--bg)}
+#summary hr{border:0;border-top:1px solid var(--rule);margin:1.6em 0}
+#summary .stamp{font:500 11px var(--f-mono);color:var(--muted);margin:0 0 1em}
+#summary .hl-block{background:var(--note-soft);border-radius:3px}
+#summary .pin{left:-14px}
+/* figures in the summary (Story by figure): click to enlarge (her request 2026-10-21) */
+#summary img{display:block;max-width:100%;height:auto;margin:12px auto 6px;border:1px solid var(--rule);border-radius:6px;background:#fff;cursor:zoom-in}
+#lightbox{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;padding:16px;cursor:zoom-out}
+#lightbox[hidden]{display:none}
+#lightbox img{max-width:100%;max-height:100%;background:#fff;border-radius:4px;box-shadow:0 4px 24px rgba(0,0,0,.5)}
+/* exact time on notes (her request 2026-10-21) */
+.note .when{font:500 11px var(--f-mono);color:var(--muted);margin:4px 0 0}
+.note.collapsed .when{display:none}
+#pop .popwhen{font:500 11px var(--f-mono);color:var(--muted);margin:0 0 4px}
+::highlight(qa-hl){background-color:var(--note-soft)}
+@media (max-width:560px){#bar .title{display:none}.hide-sm{display:none}}
+</style>
+
+<header id="bar">
+  <div class="title" id="ptitle"></div>
+  <div class="seg" role="group" aria-label="Document" id="docSeg"></div>
+  <span id="pageno">–</span>
+  <button class="icon" id="zoomOut" aria-label="Zoom out">−</button>
+  <button class="icon" id="zoomIn" aria-label="Zoom in">+</button>
+  <button class="icon" id="drawerBtn" aria-expanded="false">Contents · Notes<span class="badge" id="ncount" hidden>0</span></button>
+</header>
+
+<div id="scroll"><div id="pages"><div id="loading">Loading the PDF…</div></div><article id="summary" hidden></article></div>
+
+<aside id="drawer" aria-label="Contents and notes">
+  <div id="drawerGrip" title="Drag to change the width · double-click to reset" aria-hidden="true"></div>
+  <div class="tabs"><button id="tabToc" aria-pressed="true">Contents</button><button id="tabNotes" aria-pressed="false">Notes</button></div>
+  <div class="body" id="drawerBody"></div>
+</aside>
+
+<div id="selBar" hidden><button id="askBtn">Ask Claude</button><button id="trBtn" hidden>Translate</button></div>
+<section id="tr" hidden aria-label="Translate the selection">
+  <div class="head" title="Drag to move · double-click to put it back"><span class="grip" aria-hidden="true">⋮⋮</span><span class="from" id="trFrom">Detecting…</span><span class="arrow">→</span>
+    <select id="trLang" aria-label="Translate to"></select>
+    <button class="icon" id="trClose" aria-label="Close translator">×</button></div>
+  <div id="trBody"></div>
+</section>
+<div id="pop" hidden></div>
+<div id="toast" role="status" hidden></div>
+<div id="lightbox" hidden><img alt=""></div>
+
+<section id="ask" hidden aria-label="Ask Claude about the selection">
+  <div class="head" title="Drag to move · double-click to put it back"><span><span class="grip" aria-hidden="true">⋮⋮</span>Ask about this passage</span> <span id="askWhere"></span></div>
+  <blockquote id="askQuote"></blockquote>
+  <div class="presets" id="presets">
+    <button data-q="Explain this simply.">Explain simply</button>
+    <button data-q="How exactly did they compute this? Give parameters and the code if available.">How was it computed?</button>
+    <button data-q="Which figure panel supports this, and how strong is the evidence?">Evidence?</button>
+    <button id="researchChip" hidden data-q="How could I apply this to my research?">For my research</button>
+  </div>
+  <textarea id="askText" placeholder="Type your question…" maxlength="2000"></textarea>
+  <div class="row"><span id="askMsg"></span>
+    <span><button class="icon" id="askCancel">Cancel</button> <button id="send">Send to Claude</button></span></div>
+</section>
+
+<script type="application/json" id="cfg">__CFG__</script>
+<script>/* card cover: paint the article-header crop at once, so the gallery thumbnail (a snapshot of the first paint) shows it, not "Loading the PDF…" */(()=>{try{const c=JSON.parse(document.getElementById('cfg').textContent);if(c.cover){document.getElementById('pages').insertAdjacentHTML('afterbegin','<div class="cover" style="width:min(100%,860px)"><img src="'+c.cover+'" alt=""></div>')}}catch(e){}})()</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+<script>
+(() => {
+const CFG = JSON.parse(document.getElementById('cfg').textContent);
+const $ = s => document.querySelector(s);
+const scrollEl = $('#scroll'), pagesEl = $('#pages');
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdf.worker.min.js';
+$('#ptitle').textContent = CFG.short || CFG.title;
+
+function fmtWhen(iso) {
+  if (!iso) return '';
+  const d = new Date(iso); if (isNaN(d)) return String(iso).slice(0, 16).replace('T', ' ');
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+const NC_KEY = 'paperReader.notesCollapsed';
+let collapsedNotes = new Set();
+try { collapsedNotes = new Set(JSON.parse(localStorage.getItem(NC_KEY) || '[]')); } catch (e) {}
+function saveCollapsed() { try { localStorage.setItem(NC_KEY, JSON.stringify([...collapsedNotes])); } catch (e) {} }
+function setCollapsed(card, on) {
+  card.classList.toggle('collapsed', on);
+  const b = card.querySelector('.tog'); if (b) { b.textContent = on ? '▸' : '▾'; b.setAttribute('aria-expanded', String(!on)); b.title = on ? 'Expand this note' : 'Collapse this note'; }
+  if (on) collapsedNotes.add(card.dataset.id); else collapsedNotes.delete(card.dataset.id);
+}
+const state = { doc: CFG.docs[0].key, zoom: 1, pdfs: {}, shells: [], notes: [], sel: null, drawerTab: 'toc', view: 'pdf', summary: {}, sumScale: 1 };
+const sumEl = document.getElementById('summary');
+/* text tabs after the PDFs: from cfg.tabs (set by build_reader.py --type); kind "md" renders markdown, "timeline" the review timeline */
+const MD_DEFAULT_EMPTY = { summary: 'The summary appears here once Claude adds it to the reader.', links: 'The paper\u2019s links appear here once Claude adds them to the reader.' };
+const MD = (Array.isArray(CFG.tabs) && CFG.tabs.length ? CFG.tabs : [{ key: 'summary', label: 'Summary' }, { key: 'links', label: 'Links' }])
+  .map(t => ({ kind: 'md', ...t, empty: t.empty || MD_DEFAULT_EMPTY[t.key] || `The ${t.label} tab appears here once Claude adds it to the reader.` }));
+state.md = {}; state.mdKey = 'summary';
+/* each tab remembers where she was: pdf tabs by page + fraction of the page (survives zoom), Summary/Links by scroll offset */
+state.pos = {}; state.reapply = null; state.restoreUntil = 0;
+function savePos() {
+  if (state.view === 'md') { state.pos['md:' + state.mdKey] = { top: scrollEl.scrollTop }; return; }
+  if (!state.shells.length) return;
+  const y = scrollEl.scrollTop; let sh = null;
+  for (const s of state.shells) { if (s.offsetTop <= y + 1) sh = s; else break; }
+  state.pos['pdf:' + state.doc] = sh ? { page: +sh.dataset.page, frac: (y - sh.offsetTop) / (sh.offsetHeight || 1) } : { top: y };
+}
+function restorePos(k) {
+  const p = state.pos[k];
+  const apply = () => {
+    if (!p) { scrollEl.scrollTop = 0; return; }
+    if (p.page) { const sh = document.getElementById(`${state.doc}-p${p.page}`); if (sh) { scrollEl.scrollTop = sh.offsetTop + p.frac * sh.offsetHeight; return; } }
+    scrollEl.scrollTop = p.top || 0;
+  };
+  apply(); state.reapply = apply; state.restoreUntil = Date.now() + 2500;
+}
+const mdByKey = k => MD.find(m => m.key === k);
+const docLabel = (doc, page, section) => mdByKey(doc) ? mdByKey(doc).label + (section ? ' \u00b7 ' + String(section).slice(0, 40) : '') : (docByKey(doc)?.label || doc) + ' \u00b7 p.' + page;
+const docByKey = k => CFG.docs.find(d => d.key === k);
+
+/* document switcher */
+CFG.docs.forEach(d => {
+  const b = document.createElement('button'); b.textContent = d.label; b.dataset.key = d.key;
+  b.setAttribute('aria-pressed', d.key === state.doc); b.onclick = () => openDoc(d.key);
+  $('#docSeg').appendChild(b);
+});
+MD.forEach(m => {
+  const b = document.createElement('button'); b.textContent = m.label; b.dataset.md = m.key;
+  b.setAttribute('aria-pressed', 'false'); b.onclick = () => openMd(m.key);
+  $('#docSeg').appendChild(b);
+});
+
+async function getPdf(key) {
+  if (!state.pdfs[key]) state.pdfs[key] = pdfjsLib.getDocument({ url: docByKey(key).file }).promise;
+  return state.pdfs[key];
+}
+
+let io = null;
+async function openDoc(key, gotoPage) {
+  savePos();
+  state.doc = key;
+  showView('pdf');
+  pagesEl.innerHTML = (CFG.cover && key === CFG.docs[0].key ? `<div class="cover" style="width:min(100%,860px)"><img src="${CFG.cover}" alt=""></div>` : '') + '<div id="loading">Loading the PDF…</div>';
+  hideAsk(); hidePop();
+  let pdf;
+  try { pdf = await getPdf(key); }
+  catch (e) { pagesEl.innerHTML = '<div id="loading">Could not load this PDF. Reload the page to try again.</div>'; return; }
+  const first = await pdf.getPage(1);
+  const base = first.getViewport({ scale: 1 });
+  const avail = Math.min(scrollEl.clientWidth - 36, 1100);
+  const scale = Math.max(0.4, (avail / base.width) * state.zoom);
+  pagesEl.innerHTML = '';
+  if (io) io.disconnect();
+  state.shells = [];
+  if (CFG.cover && key === CFG.docs[0].key) {
+    const cv = document.createElement(CFG.url ? 'a' : 'div');
+    cv.className = 'cover'; cv.style.width = (base.width * scale) + 'px';
+    if (CFG.url) { cv.href = CFG.url; cv.target = '_blank'; cv.rel = 'noopener'; cv.title = 'Open the article on the publisher’s site'; }
+    const img = document.createElement('img'); img.src = CFG.cover; img.alt = 'Article header on the publisher’s site: ' + (CFG.title || '');
+    img.onerror = () => cv.remove();
+    img.onload = () => { if (state.reapply && Date.now() < state.restoreUntil && state.view === 'pdf' && state.doc === key) state.reapply(); };
+    cv.appendChild(img); pagesEl.appendChild(cv);
+  }
+  for (let n = 1; n <= pdf.numPages; n++) {
+    const sh = document.createElement('div');
+    sh.className = 'page'; sh.dataset.page = n; sh.id = `${key}-p${n}`;
+    sh.style.width = (base.width * scale) + 'px'; sh.style.height = (base.height * scale) + 'px';
+    sh.innerHTML = `<span class="pnum">p. ${n}</span>`;
+    pagesEl.appendChild(sh); state.shells.push(sh);
+  }
+  state.scale = scale;
+  io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) renderPage(pdf, e.target); }), { root: scrollEl, rootMargin: '600px 0px' });
+  state.shells.forEach(s => io.observe(s));
+  renderDrawer();
+  if (gotoPage) {
+    goPage(gotoPage, false);
+    state.reapply = () => { const sh = document.getElementById(`${key}-p${gotoPage}`); if (sh) scrollEl.scrollTop = sh.offsetTop - 8; };
+    state.restoreUntil = Date.now() + 2500;
+  } else restorePos('pdf:' + key);
+  updatePageNo();
+}
+
+async function renderPage(pdf, sh) {
+  if (sh.dataset.done) return; sh.dataset.done = '1';
+  const n = +sh.dataset.page;
+  const page = await pdf.getPage(n);
+  const vp = page.getViewport({ scale: state.scale });
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.floor(vp.width * dpr); canvas.height = Math.floor(vp.height * dpr);
+  sh.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+  await page.render({ canvasContext: ctx, viewport: vp, transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null }).promise;
+  const tl = document.createElement('div'); tl.className = 'textLayer';
+  tl.style.setProperty('--scale-factor', vp.scale);
+  sh.appendChild(tl);
+  const textContent = await page.getTextContent();
+  const task = pdfjsLib.renderTextLayer({ textContentSource: textContent, container: tl, viewport: vp, textDivs: [] });
+  await task.promise;
+  const end = document.createElement('div'); end.className = 'endOfContent'; tl.appendChild(end);
+  applyHighlights(sh);
+}
+
+/* navigation */
+function goPage(n, flash = true) {
+  const sh = document.getElementById(`${state.doc}-p${n}`); if (!sh) return;
+  scrollEl.scrollTo({ top: sh.offsetTop - 8, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  if (flash) { sh.classList.remove('flash'); void sh.offsetWidth; sh.classList.add('flash'); }
+}
+function updatePageNo() {
+  if (state.view === 'md') {
+    const h = scrollEl.clientHeight || 1, total = Math.max(1, Math.ceil(scrollEl.scrollHeight / h));
+    const cur = Math.min(total, Math.floor((scrollEl.scrollTop + h / 3) / h) + 1);
+    $('#pageno').textContent = `p. ${cur} / ${total}`; return;
+  }
+  const mid = scrollEl.scrollTop + scrollEl.clientHeight / 3;
+  let cur = 1; for (const s of state.shells) { if (s.offsetTop <= mid) cur = +s.dataset.page; else break; }
+  $('#pageno').textContent = `p. ${cur} / ${state.shells.length || '–'}`;
+}
+scrollEl.addEventListener('scroll', () => { updatePageNo(); hideAskBtn(); }, { passive: true });
+$('#zoomIn').onclick = () => rezoom(1.15);
+$('#zoomOut').onclick = () => rezoom(1 / 1.15);
+function rezoom(f) {
+  if (state.view === 'md') { state.sumScale = Math.min(1.6, Math.max(0.8, state.sumScale * f)); sumEl.style.setProperty('--sum-scale', state.sumScale); return; }
+  state.zoom = Math.min(3, Math.max(0.5, state.zoom * f)); openDoc(state.doc);
+}
+let rT; addEventListener('resize', () => { clearTimeout(rT); if (state.view === 'md') return; rT = setTimeout(() => openDoc(state.doc), 300); });
+
+/* summary view */
+function showView(v) {
+  state.view = v;
+  pagesEl.hidden = v !== 'pdf'; sumEl.hidden = v !== 'md';
+  document.querySelectorAll('#docSeg button').forEach(b => b.setAttribute('aria-pressed', v === 'pdf' ? b.dataset.key === state.doc : b.dataset.md === state.mdKey));
+}
+function openMd(key, noteId) {
+  savePos(); hideAsk(); hidePop(); state.mdKey = key; showView('md'); renderSummary();
+  const mp = state.pos['md:' + key]; scrollEl.scrollTop = mp ? mp.top : 0; state.reapply = null; updatePageNo(); renderDrawer();
+  if (noteId) { const t = sumEl.querySelector(`[data-note="${CSS.escape(noteId)}"]`); if (t) t.scrollIntoView({ block: 'center' }); }
+}
+function slug(t, i) { return 'sum-' + i + '-' + String(t).toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40); }
+function renderSummary() {
+  const cur = state.md[state.mdKey] || {};
+  const md = cur.md;
+  const when = cur.updated_at ? new Date(cur.updated_at) : null;
+  if (mdByKey(state.mdKey).kind === 'timeline') { renderTimeline(cur); return; }
+  if (!md) { sumEl.innerHTML = `<p class="empty">${esc(mdByKey(state.mdKey).empty)}</p>`; updatePageNo(); return; }
+  const html = (window.marked && window.DOMPurify) ? DOMPurify.sanitize(marked.parse(md)) : '<pre>' + esc(md) + '</pre>';
+  sumEl.innerHTML = (when ? `<p class="stamp">${esc(state.mdKey)}.md · updated ${esc(when.toLocaleString())}</p>` : '') + html;
+  sumEl.querySelectorAll('table').forEach(t => { const w = document.createElement('div'); w.className = 'tw'; t.parentNode.insertBefore(w, t); w.appendChild(t); });
+  sumEl.querySelectorAll('h1,h2,h3').forEach((h, i) => { h.id = slug(h.textContent, i); });
+  sumEl.querySelectorAll('a[href^="http"]').forEach(a => { a.target = '_blank'; a.rel = 'noopener'; });
+  sumEl.querySelectorAll('img').forEach(im => { im.loading = 'lazy'; im.onload = updatePageNo; im.onclick = () => openLightbox(im.src, im.alt); });
+  addCopyButtons();
+  applySummaryHighlights();
+  updatePageNo();
+}
+/* copy buttons on code blocks (Tutorial, Parameters) */
+function addCopyButtons() {
+  sumEl.querySelectorAll('pre').forEach(pre => {
+    if (pre.querySelector('.copy')) return;
+    const b = document.createElement('button'); b.className = 'copy'; b.type = 'button'; b.textContent = 'Copy'; b.title = 'Copy this code';
+    b.onclick = async e => {
+      e.stopPropagation(); const code = (pre.querySelector('code') || pre).innerText.replace(/\n?Copy$/, '');
+      let ok = false;
+      try { await navigator.clipboard.writeText(code); ok = true; } catch (err) {
+        try { const ta = document.createElement('textarea'); ta.value = code; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); ok = document.execCommand('copy'); ta.remove(); } catch (err2) {}
+      }
+      b.textContent = ok ? 'Copied' : 'Select and copy'; setTimeout(() => { b.textContent = 'Copy'; }, 1600);
+    };
+    pre.appendChild(b);
+  });
+}
+/* timeline tab: every paper the review cites, oldest first; key papers only (<= 30) by default, "Show all" lists everything */
+state.tl = { all: false, q: '', sec: '', tag: '' };
+function renderTimeline(cur) {
+  const items = Array.isArray(cur.items) ? cur.items.slice() : [];
+  const when = cur.updated_at ? new Date(cur.updated_at) : null;
+  if (!items.length) { sumEl.innerHTML = `<p class="empty">${esc(mdByKey(state.mdKey).empty)}</p>`; updatePageNo(); return; }
+  /* key papers: at most 30, in the order Claude listed them */
+  let kc = 0; items.forEach(i => { i._key = !!i.key && kc++ < 30; });
+  const nKey = items.filter(i => i._key).length;
+  const secs = [...new Set(items.flatMap(i => i.sections || []))];
+  const tags = [...new Set(items.map(i => i.tag).filter(Boolean))].sort();
+  sumEl.innerHTML = (when ? `<p class="stamp">${esc(cur.source || 'timeline.json')} \u00b7 updated ${esc(when.toLocaleString())}</p>` : '') +
+    (cur.title ? `<h1>${esc(cur.title)}</h1>` : '') +
+    `<div class="tl-bar">
+      <button type="button" id="tlAll" aria-pressed="${state.tl.all}" title="Key papers are the ones the review discusses in depth">${state.tl.all ? 'Key papers only (' + nKey + ')' : 'Show all (' + items.length + ')'}</button>
+      <input id="tlQ" type="search" placeholder="Search title, author, role\u2026" value="${esc(state.tl.q)}" aria-label="Search the timeline">
+      ${secs.length ? `<select id="tlSec" aria-label="Review section"><option value="">All sections</option>${secs.map(x => `<option${x === state.tl.sec ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select>` : ''}
+      ${tags.length ? `<select id="tlTag" aria-label="Paper type"><option value="">All types</option>${tags.map(x => `<option${x === state.tl.tag ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select>` : ''}
+      <span class="tl-count" id="tlCount"></span></div><div class="tl-list" id="tlList"></div>`;
+  const listEl = sumEl.querySelector('#tlList');
+  const draw = () => {
+    const q = state.tl.q.trim().toLowerCase();
+    const shown = items.filter(i => (state.tl.all || !nKey || i._key) && (!state.tl.sec || (i.sections || []).includes(state.tl.sec)) && (!state.tl.tag || i.tag === state.tl.tag) &&
+      (!q || [i.title, i.authors, i.journal, i.role, (i.sections || []).join(' ')].join(' ').toLowerCase().includes(q)))
+      .sort((a, b) => (a.year || 0) - (b.year || 0) || String(a.date || '').localeCompare(String(b.date || '')) || (a.ref || 0) - (b.ref || 0));
+    sumEl.querySelector('#tlCount').textContent = `${shown.length} of ${items.length}`;
+    let html = '', yr = null;
+    shown.forEach(i => {
+      if (i.year !== yr) { yr = i.year; html += `<h2 class="tl-year" id="tl-y${esc(yr)}">${esc(yr || 'Undated')}</h2>`; }
+      const url = i.url || (i.doi ? 'https://doi.org/' + i.doi : '');
+      const pages = (i.pages_in_review || []).slice(0, 6);
+      html += `<article class="tl-item${i._key ? ' key' : ''}">
+        <div class="tl-title">${url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(i.title || '(untitled)')}</a>` : esc(i.title || '(untitled)')}</div>
+        <div class="tl-meta">${i.tag ? `<span class="tl-tag ${esc(String(i.tag).toLowerCase())}">${esc(i.tag)}</span>` : ''}${esc([i.authors, i.journal, i.year].filter(Boolean).join(' \u00b7 '))}${i.ref ? ` \u00b7 ref. ${esc(i.ref)}` : ''}${url ? '' : ' \u00b7 <span class="tl-none">no link found</span>'}</div>
+        ${i.role ? `<p class="tl-role">${esc(i.role)}</p>` : ''}
+        ${(i.sections || []).length || pages.length ? `<p class="tl-where">${(i.sections || []).length ? 'In the review: ' + esc(i.sections.join('; ')) : 'In the review'}${pages.length ? ' \u00b7 ' + pages.map(pg => `<a data-page="${esc(pg)}">p. ${esc(pg)}</a>`).join(', ') : ''}</p>` : ''}
+      </article>`;
+    });
+    listEl.innerHTML = html || '<p class="empty">No paper matches these filters.</p>';
+    listEl.querySelectorAll('a[data-page]').forEach(a => a.onclick = e => { e.preventDefault(); openDoc(CFG.docs[0].key, +a.dataset.page); });
+    applySummaryHighlights(); updatePageNo(); if (state.drawerTab === 'toc') renderDrawer();
+  };
+  sumEl.querySelector('#tlAll').onclick = () => { state.tl.all = !state.tl.all; renderTimeline(cur); };
+  sumEl.querySelector('#tlQ').oninput = e => { state.tl.q = e.target.value; draw(); };
+  const sv = sumEl.querySelector('#tlSec'); if (sv) sv.onchange = e => { state.tl.sec = e.target.value; draw(); };
+  const tv = sumEl.querySelector('#tlTag'); if (tv) tv.onchange = e => { state.tl.tag = e.target.value; draw(); };
+  draw();
+}
+function openLightbox(src, alt) { const lb = $('#lightbox'), im = lb.querySelector('img'); im.src = src; im.alt = alt || ''; lb.hidden = false; }
+$('#lightbox').onclick = () => { $('#lightbox').hidden = true; };
+function sectionOf(node) {
+  let sec = '';
+  for (const h of sumEl.querySelectorAll('h1,h2,h3')) {
+    if (h.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING || h.contains(node)) sec = h.textContent.trim(); else break;
+  }
+  return sec;
+}
+function applySummaryHighlights() {
+  sumEl.querySelectorAll('.pin').forEach(p => p.remove());
+  sumEl.querySelectorAll('.hl-block').forEach(b => b.classList.remove('hl-block'));
+  sumEl.querySelectorAll('[data-note]').forEach(b => b.removeAttribute('data-note'));
+  const ranges = [];
+  const mine = state.notes.filter(n => n.doc === state.mdKey && n.quote);
+  const blocks = [...sumEl.querySelectorAll('p,li,td,th,h1,h2,h3,blockquote,.tl-title,.tl-meta')];
+  mine.forEach(note => {
+    const q = norm(note.quote).slice(0, 400); if (!q) return;
+    const blk = blocks.filter(b => norm(b.textContent).includes(q)).pop(); if (!blk) return;
+    blk.setAttribute('data-note', note.id);
+    let made = false;
+    if (window.CSS && CSS.highlights && window.Highlight) {
+      const tw = document.createTreeWalker(blk, NodeFilter.SHOW_TEXT); const map = []; let full = '';
+      for (let n; (n = tw.nextNode());) { const t = n.nodeValue; for (let i = 0; i < t.length; i++) { if (!/\s/.test(t[i])) { map.push([n, i]); full += t[i].toLowerCase(); } } }
+      const at = full.indexOf(q);
+      if (at >= 0) { const r = document.createRange(); const a = map[at], b = map[at + q.length - 1]; r.setStart(a[0], a[1]); r.setEnd(b[0], b[1] + 1); ranges.push(r); made = true; }
+    }
+    if (!made) blk.classList.add('hl-block');
+    const pin = document.createElement('button'); pin.className = 'pin' + (note.status === 'answered' ? '' : ' wait');
+    pin.textContent = note.status === 'answered' ? 'Q' : '…'; pin.title = 'Show the saved question and answer';
+    pin.style.top = (blk.getBoundingClientRect().top - sumEl.getBoundingClientRect().top - 2) + 'px';
+    pin.onclick = e => { e.stopPropagation(); showPop(note, pin); };
+    sumEl.appendChild(pin);
+  });
+  if (window.CSS && CSS.highlights && window.Highlight) { CSS.highlights.delete('qa-hl'); if (ranges.length) CSS.highlights.set('qa-hl', new Highlight(...ranges)); }
+}
+
+/* drawer */
+$('#drawerBtn').onclick = () => toggleDrawer();
+/* drawer width: drag the left edge; remembered on this computer */
+const DW_KEY = 'paperReader.drawerWidth';
+function setDrawerWidth(w) { if (w) document.documentElement.style.setProperty('--drawer-w', Math.round(w) + 'px'); else document.documentElement.style.removeProperty('--drawer-w'); }
+try { const w = parseInt(localStorage.getItem(DW_KEY) || '', 10); if (w >= 280) setDrawerWidth(w); } catch (e) {}
+(() => {
+  const g = $('#drawerGrip'), d = $('#drawer'); let id = null, sx = 0, sw = 0;
+  g.addEventListener('pointerdown', e => { if (e.button !== 0) return; id = e.pointerId; sx = e.clientX; sw = d.getBoundingClientRect().width; d.classList.add('resizing'); try { g.setPointerCapture(id); } catch (err) {} e.preventDefault(); });
+  g.addEventListener('pointermove', e => { if (id === null || e.pointerId !== id) return; const w = Math.max(280, Math.min(sw + (sx - e.clientX), innerWidth * 0.92)); setDrawerWidth(w); });
+  const end = e => { if (id === null || (e && e.pointerId !== id)) return; try { g.releasePointerCapture(id); } catch (err) {} id = null; d.classList.remove('resizing'); try { localStorage.setItem(DW_KEY, String(Math.round(d.getBoundingClientRect().width))); } catch (err) {} updatePageNo(); };
+  g.addEventListener('pointerup', end); g.addEventListener('pointercancel', end);
+  g.addEventListener('dblclick', () => { setDrawerWidth(null); try { localStorage.removeItem(DW_KEY); } catch (err) {} });
+})();
+function toggleDrawer(force) {
+  const open = force ?? !$('#drawer').classList.contains('open');
+  $('#drawer').classList.toggle('open', open); $('#drawerBtn').setAttribute('aria-expanded', open);
+}
+$('#tabToc').onclick = () => { state.drawerTab = 'toc'; renderDrawer(); };
+$('#tabNotes').onclick = () => { state.drawerTab = 'notes'; renderDrawer(); };
+function esc(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function renderDrawer() {
+  $('#tabToc').setAttribute('aria-pressed', state.drawerTab === 'toc');
+  $('#tabNotes').setAttribute('aria-pressed', state.drawerTab === 'notes');
+  const body = $('#drawerBody');
+  if (state.drawerTab === 'toc' && state.view === 'md') {
+    const hs = [...sumEl.querySelectorAll('h1,h2,h3')];
+    body.innerHTML = hs.length ? `<div class="grp">${esc(mdByKey(state.mdKey).label)}</div><div class="toc">` + hs.map(h => `<a href="#" data-h="${esc(h.id)}"><span>${esc(h.textContent)}</span><span></span></a>`).join('') + '</div>' : '<p class="empty">Nothing here yet.</p>';
+    body.querySelectorAll('a[data-h]').forEach(a => a.onclick = e => { e.preventDefault(); const h = document.getElementById(a.dataset.h); if (h) h.scrollIntoView({ block: 'start' }); if (innerWidth < 900) toggleDrawer(false); });
+    return;
+  }
+  if (state.drawerTab === 'toc') {
+    const d = docByKey(state.doc); let h = '';
+    for (const g of d.toc) {
+      if (!g.items.length) continue;
+      h += `<div class="grp">${esc(g.group)}</div><div class="toc">` +
+        g.items.map(it => `<a href="#" data-p="${it.p}"><span>${esc(it.t)}</span><span>p.${it.p}</span></a>`).join('') + '</div>';
+    }
+    body.innerHTML = h || '<p class="empty">No outline in this PDF.</p>';
+    body.querySelectorAll('a[data-p]').forEach(a => a.onclick = e => { e.preventDefault(); goPage(+a.dataset.p); if (innerWidth < 900) toggleDrawer(false); });
+  } else {
+    const list = state.notes.slice().sort((a, b) => (a.doc === b.doc ? a.page - b.page : a.doc < b.doc ? -1 : 1));
+    if (!list.length) { body.innerHTML = `<p class="empty">No questions yet. Select a sentence in the paper and press <b>Ask Claude</b>. Questions wait here; say “go” in the chat and Claude answers them in the chat and saves each answer here, highlighted on its page. Delete any note with its Delete button.</p>`; return; }
+    const allBar = `<div class="notes-bar"><button data-all="collapse" title="Show only the question line of every note">Collapse all</button><button data-all="expand" title="Show every note in full">Expand all</button></div>`;
+    body.innerHTML = allBar + list.map(n => { const c = collapsedNotes.has(n.id); return `<article class="note${c ? ' collapsed' : ''}" data-id="${esc(n.id)}">
+      <div class="meta"><button class="tog" aria-expanded="${!c}" title="${c ? 'Expand this note' : 'Collapse this note'}">${c ? '▸' : '▾'}</button><span class="where">${esc(docLabel(n.doc, n.page, n.section))}</span><span title="Asked (your local time)">${esc(fmtWhen(n.asked_at))}</span></div>
+      ${n.quote ? `<blockquote>${esc(n.quote)}</blockquote>` : ''}
+      <p class="q">Q: ${esc(n.question)}</p>${n.status === 'answered' ? `<p class="a">${esc(n.answer)}</p>${n.answered_at ? `<p class="when">Answered ${esc(fmtWhen(n.answered_at))}</p>` : ''}` : `<p class="pending">Waiting for Claude. Say “go” in the chat to get all waiting questions answered.</p>`}
+      <p class="acts"><button data-go="${esc(n.doc)}|${esc(n.page)}|${esc(n.id)}">Go to passage</button><button class="del" data-del="${esc(n.id)}" title="Delete this question and its answer">Delete</button></p></article>`; }).join('');
+    body.querySelectorAll('article.note').forEach(card => {
+      const flip = e => { e.stopPropagation(); setCollapsed(card, !card.classList.contains('collapsed')); saveCollapsed(); };
+      card.querySelector('.meta').onclick = flip; card.querySelector('.q').onclick = flip;
+    });
+    body.querySelectorAll('button[data-all]').forEach(b => b.onclick = () => {
+      const on = b.dataset.all === 'collapse';
+      body.querySelectorAll('article.note').forEach(card => setCollapsed(card, on)); saveCollapsed();
+    });
+    body.querySelectorAll('button[data-go]').forEach(b => b.onclick = () => {
+      const [d, p, id] = b.dataset.go.split('|');
+      if (mdByKey(d)) { openMd(d, id); if (innerWidth < 900) toggleDrawer(false); return; }
+      if (d !== state.doc) openDoc(d, +p); else goPage(+p);
+      if (innerWidth < 900) toggleDrawer(false);
+    });
+    body.querySelectorAll('button[data-del]').forEach(b => armDelete(b, b.dataset.del));
+  }
+}
+
+/* highlights for saved notes */
+const norm = s => String(s || '').replace(/\s+/g, '').replace(/[‐-―−]/g, '-').toLowerCase();
+function applyHighlights(sh) {
+  sh.querySelectorAll('.pin').forEach(p => p.remove());
+  sh.querySelectorAll('span.hl').forEach(s => { s.classList.remove('hl'); });
+  const tl = sh.querySelector('.textLayer'); if (!tl) return;
+  const n = +sh.dataset.page;
+  const mine = state.notes.filter(x => x.doc === state.doc && +x.page === n && x.quote);
+  if (!mine.length) return;
+  const spans = [...tl.querySelectorAll('span')].filter(s => !s.children.length);
+  let full = '', idx = [];
+  spans.forEach((s, i) => { const t = norm(s.textContent); for (let k = 0; k < t.length; k++) idx.push(i); full += t; });
+  mine.forEach((note, k) => {
+    const q = norm(note.quote).slice(0, 400); if (!q) return;
+    const at = full.indexOf(q); if (at < 0) return;
+    const a = idx[at], b = idx[Math.min(at + q.length - 1, idx.length - 1)];
+    for (let i = a; i <= b; i++) spans[i].classList.add('hl');
+    const pin = document.createElement('button'); pin.className = 'pin' + (note.status === 'answered' ? '' : ' wait'); pin.textContent = note.status === 'answered' ? 'Q' : '…';
+    pin.title = 'Show the saved question and answer';
+    pin.style.top = (spans[a].offsetTop - 4) + 'px';
+    pin.onclick = e => { e.stopPropagation(); showPop(note, pin); };
+    sh.appendChild(pin);
+  });
+}
+function refreshHighlights() { state.shells.forEach(sh => { if (sh.dataset.done) applyHighlights(sh); }); if (state.view === 'md') applySummaryHighlights(); }
+function showPop(note, anchorEl) {
+  const p = $('#pop'); const r = anchorEl.getBoundingClientRect(), sr = scrollEl.getBoundingClientRect();
+  p.innerHTML = `<div class="head" title="Drag to move · double-click to put it back by its pin"><span><span class="grip" aria-hidden="true">⋮⋮</span>Note</span><button class="x" title="Close" aria-label="Close">×</button></div>` + `<div class="popwhen">Asked ${esc(fmtWhen(note.asked_at))}${note.answered_at ? ' · answered ' + esc(fmtWhen(note.answered_at)) : ''}</div>` + `<div class="q" style="font-weight:600">Q: ${esc(note.question)}</div>` + (note.status === 'answered' ? `<p class="a">${esc(note.answer)}</p>` : `<p class="pending">Waiting for Claude…</p>`)
+    + `<p class="acts"><button class="del" data-del="${esc(note.id)}" title="Delete this question and its answer">Delete note</button></p>`;
+  armDelete(p.querySelector('button[data-del]'), note.id);
+  p.querySelector('.x').onclick = hidePop;
+  p.hidden = false;
+  const place = () => {
+    const left = Math.max(8, Math.min(r.right + 8, innerWidth - p.offsetWidth - 8));
+    const top = Math.max(8, Math.min(r.bottom + 6, innerHeight - p.offsetHeight - 8));
+    p.style.left = left + 'px'; p.style.top = top + 'px'; p.style.right = p.style.bottom = '';
+  };
+  if (p.dataset.moved) clampBox(p); else place();
+  p._place = place;
+}
+function hidePop() { $('#pop').hidden = true; }
+document.addEventListener('click', e => { if (!e.target.closest('#pop') && !e.target.closest('.pin')) hidePop(); });
+
+/* selection → Ask */
+const askBtn = $('#askBtn'), selBar = $('#selBar');
+function hideAskBtn() { selBar.hidden = true; }
+function placeBar(rc) {
+  selBar.hidden = false;
+  selBar.style.left = Math.max(8, Math.min(rc.right - selBar.offsetWidth, innerWidth - selBar.offsetWidth - 8)) + 'px';
+  selBar.style.top = Math.min(rc.bottom + 8, innerHeight - selBar.offsetHeight - 8) + 'px';
+}
+document.addEventListener('mouseup', onSelect); document.addEventListener('touchend', () => setTimeout(onSelect, 50));
+function onSelect(e) {
+  if (e && e.target && e.target.closest && e.target.closest('#ask,#selBar,#tr,#drawer,#bar,#pop')) return;
+  const s = getSelection(); if (!s || s.isCollapsed) { hideAskBtn(); return; }
+  const text = s.toString().replace(/\s+/g, ' ').trim();
+  const r = s.getRangeAt(0); const startEl = (r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement);
+  if (startEl && startEl.closest('#summary') && text.length >= 2) {
+    state.sel = { range: r.cloneRange(), quote: text.slice(0, 1500), page: 0, doc: state.mdKey, section: sectionOf(startEl), shell: null, span: null };
+    placeBar(r.getBoundingClientRect()); return;
+  }
+  const sh = startEl && startEl.closest('.page');
+  if (!sh || text.length < 2) { hideAskBtn(); return; }
+  state.sel = { range: r.cloneRange(), quote: text.slice(0, 1500), page: +sh.dataset.page, doc: state.doc, shell: sh, span: startEl.closest('span') || sh };
+  placeBar(r.getBoundingClientRect());
+}
+askBtn.onclick = () => {
+  if (!state.sel) return; hideAskBtn();
+  $('#askQuote').textContent = state.sel.quote;
+  $('#askWhere').textContent = docLabel(state.sel.doc, state.sel.page, state.sel.section);
+  $('#askMsg').textContent = ''; $('#askMsg').className = '';
+  $('#ask').hidden = false; clampBox($('#ask')); $('#send').disabled = false; $('#askText').focus({ preventScroll: true });
+};
+if (CFG.research) { const rc = $('#researchChip'); rc.dataset.q = 'How could I apply this to my research (' + String(CFG.research).slice(0, 300) + ')?'; rc.hidden = false; }
+$('#presets').addEventListener('click', e => { const b = e.target.closest('button[data-q]'); if (!b) return; const t = $('#askText'); t.value = (t.value ? t.value + ' ' : '') + b.dataset.q; t.focus(); });
+$('#askCancel').onclick = hideAsk;
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { hideAsk(); hidePop(); hideTr(); $('#lightbox').hidden = true; } });
+function hideAsk() { $('#ask').hidden = true; }
+
+/* drag the Ask and Translate boxes by their header; they stay where dropped until reload (double-click header = reset) */
+function clampBox(box) {
+  if (!box.dataset.moved) return;
+  const r = box.getBoundingClientRect();
+  const left = Math.max(4, Math.min(r.left, innerWidth - Math.min(r.width, innerWidth) - 4));
+  const top = Math.max(4, Math.min(r.top, innerHeight - 48));
+  box.style.left = left + 'px'; box.style.top = top + 'px';
+}
+function makeDraggable(box, handle, onReset) {
+  let sx = 0, sy = 0, bx = 0, by = 0, id = null;
+  handle.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || e.target.closest('button,select,input,textarea,a')) return;
+    const r = box.getBoundingClientRect();
+    box.style.left = r.left + 'px'; box.style.top = r.top + 'px'; box.style.right = 'auto'; box.style.bottom = 'auto';
+    sx = e.clientX; sy = e.clientY; bx = r.left; by = r.top; id = e.pointerId;
+    try { handle.setPointerCapture(id); } catch (err) {}
+    box.classList.add('dragging'); e.preventDefault();
+  });
+  handle.addEventListener('pointermove', e => {
+    if (id === null || e.pointerId !== id) return;
+    const w = box.offsetWidth;
+    const nx = Math.max(4, Math.min(bx + e.clientX - sx, innerWidth - w - 4));
+    const ny = Math.max(4, Math.min(by + e.clientY - sy, innerHeight - 48));
+    box.style.left = nx + 'px'; box.style.top = ny + 'px'; box.dataset.moved = '1';
+  });
+  const end = e => { if (id === null || (e && e.pointerId !== id)) return; try { handle.releasePointerCapture(id); } catch (err) {} id = null; box.classList.remove('dragging'); };
+  handle.addEventListener('pointerup', end); handle.addEventListener('pointercancel', end);
+  handle.addEventListener('dblclick', e => {
+    if (e.target.closest('button,select,input,textarea,a')) return;
+    delete box.dataset.moved; box.style.left = box.style.top = box.style.right = box.style.bottom = ''; onReset && onReset();
+  });
+}
+makeDraggable($('#ask'), $('#ask .head'));
+/* the pin popup drags by its header; double-click puts it back beside its pin */
+(() => { const p = $('#pop'); p.addEventListener('pointerdown', e => { const h = e.target.closest('#pop .head'); if (!h || e.button !== 0 || e.target.closest('button')) return; const r = p.getBoundingClientRect(); p.style.left = r.left + 'px'; p.style.top = r.top + 'px'; p.style.right = p.style.bottom = 'auto'; const sx = e.clientX, sy = e.clientY, bx = r.left, by = r.top, id = e.pointerId; try { h.setPointerCapture(id); } catch (err) {} p.classList.add('dragging'); e.preventDefault();
+  const mv = ev => { if (ev.pointerId !== id) return; const nx = Math.max(4, Math.min(bx + ev.clientX - sx, innerWidth - p.offsetWidth - 4)), ny = Math.max(4, Math.min(by + ev.clientY - sy, innerHeight - 48)); p.style.left = nx + 'px'; p.style.top = ny + 'px'; p.dataset.moved = '1'; };
+  const up = ev => { if (ev.pointerId !== id) return; try { h.releasePointerCapture(id); } catch (err) {} p.classList.remove('dragging'); h.removeEventListener('pointermove', mv); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up); };
+  h.addEventListener('pointermove', mv); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up); });
+  p.addEventListener('dblclick', e => { if (!e.target.closest('#pop .head') || e.target.closest('button')) return; delete p.dataset.moved; p._place && p._place(); });
+})();
+makeDraggable($('#tr'), $('#tr .head'), () => { if (tr.sel) placeTr(tr.sel.rc); });
+addEventListener('resize', () => { ['#ask', '#tr', '#pop'].forEach(s => { const b = $(s); if (!b.hidden) clampBox(b); }); });
+
+/* translator: asks Claude directly from the page (sample capability); nothing is saved */
+const LANGS = [
+  ['zh-Hans','Chinese (Simplified)','中文（简体）','zh-CN'], ['en','English','English','en-US'], ['zh-Hant','Chinese (Traditional)','中文（繁體）','zh-TW'],
+  ['es','Spanish','Español','es-ES'], ['hi','Hindi','हिन्दी','hi-IN'], ['ar','Arabic','العربية','ar-SA'], ['bn','Bengali','বাংলা','bn-IN'],
+  ['pt','Portuguese','Português','pt-BR'], ['ru','Russian','Русский','ru-RU'], ['ja','Japanese','日本語','ja-JP'], ['de','German','Deutsch','de-DE'],
+  ['fr','French','Français','fr-FR'], ['ko','Korean','한국어','ko-KR'], ['it','Italian','Italiano','it-IT'], ['tr','Turkish','Türkçe','tr-TR'],
+  ['vi','Vietnamese','Tiếng Việt','vi-VN'], ['ur','Urdu','اردو','ur-PK'], ['fa','Persian','فارسی','fa-IR'], ['pl','Polish','Polski','pl-PL'],
+  ['uk','Ukrainian','Українська','uk-UA'], ['nl','Dutch','Nederlands','nl-NL'], ['id','Indonesian','Bahasa Indonesia','id-ID'],
+  ['ms','Malay','Bahasa Melayu','ms-MY'], ['th','Thai','ไทย','th-TH'], ['tl','Filipino','Filipino','fil-PH'], ['sw','Swahili','Kiswahili','sw-KE'],
+  ['ta','Tamil','தமிழ்','ta-IN'], ['te','Telugu','తెలుగు','te-IN'], ['mr','Marathi','मराठी','mr-IN'], ['gu','Gujarati','ગુજરાતી','gu-IN'],
+  ['kn','Kannada','ಕನ್ನಡ','kn-IN'], ['ml','Malayalam','മലയാളം','ml-IN'], ['pa','Punjabi','ਪੰਜਾਬੀ','pa-IN'], ['ro','Romanian','Română','ro-RO'],
+  ['el','Greek','Ελληνικά','el-GR'], ['cs','Czech','Čeština','cs-CZ'], ['hu','Hungarian','Magyar','hu-HU'], ['sv','Swedish','Svenska','sv-SE'],
+  ['da','Danish','Dansk','da-DK'], ['fi','Finnish','Suomi','fi-FI'], ['no','Norwegian','Norsk','nb-NO'], ['he','Hebrew','עברית','he-IL'],
+  ['sr','Serbian','Српски','sr-RS'], ['hr','Croatian','Hrvatski','hr-HR'], ['bg','Bulgarian','Български','bg-BG'], ['sk','Slovak','Slovenčina','sk-SK'],
+  ['ca','Catalan','Català','ca-ES'], ['my','Burmese','မြန်မာ','my-MM'], ['km','Khmer','ខ្មែរ','km-KH'], ['am','Amharic','አማርኛ','am-ET']
+];
+const LANG_KEY = 'paperReader.translateTo';
+/* default target language: cfg.translate_to, else the browser's language (unless English), else Chinese (Simplified) */
+const defaultLang = () => {
+  const ok = c => c && LANGS.some(l => l[0] === c) ? c : null;
+  if (ok(CFG.translate_to)) return CFG.translate_to;
+  for (const n of (navigator.languages || [navigator.language || ''])) {
+    const low = String(n).toLowerCase(); if (!low || low.startsWith('en')) continue;
+    const hit = LANGS.find(l => l[3].toLowerCase() === low) || LANGS.find(l => l[0].toLowerCase() === low) ||
+      (low.startsWith('zh') ? LANGS.find(l => l[0] === (/tw|hk|mo|hant/.test(low) ? 'zh-Hant' : 'zh-Hans')) : null) ||
+      LANGS.find(l => l[0].toLowerCase() === low.split('-')[0]);
+    if (hit) return hit[0];
+  }
+  return 'zh-Hans';
+};
+const tr = { sample: null, ctl: null, lang: defaultLang(), sel: null, off: false };
+try { const v = localStorage.getItem(LANG_KEY); if (v && LANGS.some(l => l[0] === v)) tr.lang = v; } catch (e) {}
+const langSel = $('#trLang');
+LANGS.forEach(([code, en, native]) => { const o = document.createElement('option'); o.value = code; o.textContent = native === en ? en : `${native} · ${en}`; langSel.appendChild(o); });
+langSel.value = tr.lang;
+langSel.onchange = () => { tr.lang = langSel.value; try { localStorage.setItem(LANG_KEY, tr.lang); } catch (e) {} if (tr.sel && !$('#tr').hidden) runTranslate(); };
+const langInfo = code => LANGS.find(l => l[0] === code) || [code, code, code, code];
+(async () => { try { tr.sample = window.claude?.use ? await window.claude.use('sample') : null; } catch (e) { tr.sample = null; } $('#trBtn').hidden = !tr.sample; })();
+
+const cleanText = s => String(s || '').normalize('NFKC').replace(/­/g, '').replace(/(\p{Ll})-\s+(\p{Ll})/gu, '$1$2').replace(/\s+/g, ' ').trim();
+const CJK = /[぀-ヿ㐀-鿿가-힯]/;
+function isTerm(t) {
+  if (CJK.test(t)) return t.replace(/\s/g, '').length <= 6;
+  const w = t.split(' ').filter(Boolean);
+  return w.length <= 3 && t.length <= 48 && !/[.!?;。！？；]\s/.test(t + ' ');
+}
+function contextFor(sel, term) {
+  let src = '';
+  if (sel.shell) { const tl = sel.shell.querySelector('.textLayer'); if (tl) src = [...tl.querySelectorAll('span')].map(s => s.textContent).join(' '); }
+  else { const n = sel.range.startContainer; const el = (n.nodeType === 1 ? n : n.parentElement); const blk = el && el.closest('p,li,td,th,blockquote,h1,h2,h3'); src = blk ? blk.textContent : ''; }
+  src = cleanText(src); const i = src.toLowerCase().indexOf(term.toLowerCase()); if (i < 0) return '';
+  let a = Math.max(0, i - 260), b = Math.min(src.length, i + term.length + 260);
+  const head = src.slice(a, i), tail = src.slice(i + term.length, b);
+  const sa = Math.max(head.lastIndexOf('. '), head.lastIndexOf('? '), head.lastIndexOf('! ')); if (sa >= 0) a += sa + 2;
+  const sb = tail.search(/[.?!](\s|$)/); if (sb >= 0) b = i + term.length + sb + 1;
+  return src.slice(a, b).trim();
+}
+const TTS = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
+function say(text, lang) {
+  if (!TTS || !text) return;
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text); u.lang = lang || 'en-US'; u.rate = 0.95;
+    const vs = speechSynthesis.getVoices(), l = u.lang.toLowerCase(), p = l.split('-')[0];
+    const v = vs.find(x => x.lang.toLowerCase() === l) || vs.find(x => x.lang.toLowerCase().replace('_', '-').startsWith(p)); if (v) u.voice = v;
+    speechSynthesis.speak(u);
+  } catch (e) {}
+}
+const ttsCode = (code, fallback) => { const hit = LANGS.find(l => l[0] === code || l[3].toLowerCase() === String(code || '').toLowerCase() || l[0] === String(code || '').split('-')[0]); return hit ? hit[3] : (code || fallback || 'en-US'); };
+function hideTr() { $('#tr').hidden = true; if (tr.ctl) tr.ctl.abort(); if (TTS) try { speechSynthesis.cancel(); } catch (e) {} }
+$('#trClose').onclick = hideTr;
+function placeTr(rc) {
+  const box = $('#tr'); box.hidden = false;
+  if (box.dataset.moved) { clampBox(box); return; }
+  const w = box.offsetWidth, h = Math.min(box.offsetHeight || 260, innerHeight - 16);
+  let left = Math.max(8, Math.min(rc.left, innerWidth - w - 8));
+  let top = rc.bottom + 44; if (top + h > innerHeight - 8) top = Math.max(8, rc.top - h - 10);
+  box.style.left = left + 'px'; box.style.top = top + 'px';
+}
+function trError(e) {
+  const code = e && e.code;
+  if (code === 'not_granted' || code === 'sampling_disabled' || code === 'not_declared' || code === 'capability_disabled' || code === 'capability_removed') {
+    tr.off = true; $('#trBtn').hidden = true;
+    return 'Translation needs permission to use Claude from this page. Reload the page to be asked again.';
+  }
+  if (code === 'rate_limited') return 'Too many translations at once, or your Claude usage limit was reached. Try again in a moment.';
+  if (code === 'session_expired') return 'Please sign in to Claude again, then try once more.';
+  if (code === 'invalid_json') return 'Could not read the answer. Select the text and press Translate again.';
+  return 'Translation failed. Select the text and press Translate again.';
+}
+$('#trBtn').onclick = () => {
+  if (!state.sel || !tr.sample || tr.off) return;
+  const text = cleanText(state.sel.quote); if (!text) return;
+  tr.sel = { text, sel: state.sel, rc: state.sel.range.getBoundingClientRect() };
+  hideAskBtn(); placeTr(tr.sel.rc); runTranslate();
+};
+async function runTranslate() {
+  const body = $('#trBody'), from = $('#trFrom'); if (!tr.sel) return;
+  if (tr.ctl) tr.ctl.abort(); const ctl = tr.ctl = new AbortController();
+  const [, tEn] = langInfo(tr.lang); const tCode = langInfo(tr.lang)[3];
+  const raw = tr.sel.text;
+  const term = raw.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+  from.textContent = 'Detecting…';
+  if (term && isTerm(term)) {
+    const ctx = contextFor(tr.sel.sel, term);
+    body.innerHTML = `<div class="term">${esc(term)}</div><p class="msg">Thinking…</p>`;
+    const prompt = `You are a precise bilingual dictionary for a biomedical PhD student reading a scientific paper.
+Selected term: "${term}"
+Sentence it appears in: "${ctx || '(not available)'}"
+Target language: ${tEn} (${tr.lang})
+Reply with only one JSON object, no other text:
+{"source_language":"<English name of the term's language>","source_code":"<BCP-47 code, e.g. en>","term":"<the term in dictionary form>",
+ "ipa":"<pronunciation of the term in its own language: IPA between slashes for alphabetic languages; pinyin with tone marks for Chinese; romaji for Japanese; romanization for Korean>",
+ "translation":"<best short translation into the target language>",
+ "meanings":[{"pos":"<part of speech, abbreviated in English: n., v., adj., adv., phr.>","text":"<meaning written in the target language>"}],
+ "in_context":"<one short line in the target language: what the term means in this sentence>"}
+Give 1-4 meanings, most common first. Keep gene, protein and cell-type names unchanged inside the target-language text.`;
+    try {
+      const r = await tr.sample.json(prompt, { modelTier: 'quick', signal: ctl.signal });
+      if (ctl !== tr.ctl) return;
+      const srcCode = ttsCode(r.source_code, 'en-US');
+      from.textContent = r.source_language || 'Detected';
+      const means = Array.isArray(r.meanings) ? r.meanings.slice(0, 4) : [];
+      body.innerHTML = `<div class="term">${esc(r.term || term)} ${TTS ? '<button data-say="src" aria-label="Pronounce the word">🔊</button>' : ''}</div>
+        ${r.ipa ? `<div class="ipa">${esc(r.ipa)}</div>` : ''}
+        ${r.translation ? `<div class="main">${esc(r.translation)} ${TTS ? '<button data-say="dst" aria-label="Read the translation aloud">🔊</button>' : ''}</div>` : ''}
+        ${means.length ? '<ol>' + means.map(m => `<li><span class="pos">${esc(m.pos || '')}</span>${esc(m.text || '')}</li>`).join('') + '</ol>' : ''}
+        ${r.in_context ? `<div class="ctx"><b>In this sentence</b>${esc(r.in_context)}</div>` : ''}`;
+      body.querySelector('[data-say="src"]')?.addEventListener('click', () => say(r.term || term, srcCode));
+      body.querySelector('[data-say="dst"]')?.addEventListener('click', () => say(r.translation, tCode));
+    } catch (e) {
+      if (ctl !== tr.ctl || (e && e.code === 'cancelled')) return;
+      from.textContent = ''; body.innerHTML = `<div class="term">${esc(term)}</div><p class="msg warn">${esc(trError(e))}</p>`;
+    }
+    return;
+  }
+  const text = raw.slice(0, 4000);
+  body.innerHTML = `<blockquote>${esc(text)}</blockquote><p class="out msg">Thinking…</p>`;
+  const out = body.querySelector('.out');
+  const prompt = `Translate the text below, taken from a scientific paper, into ${tEn} (${tr.lang}).
+Detect the source language. Write exactly this format and nothing else:
+line 1: SOURCE: <English name of the source language> | <BCP-47 code>
+line 2: (blank)
+then: the translation only — faithful, natural, keeping gene/protein names, symbols, numbers, units and figure references (e.g. "Fig. 2b") unchanged.
+
+Text:
+"""${text}"""`;
+  let srcName = '', srcCode = 'en-US', translation = '';
+  const parse = full => {
+    const m = full.match(/^\s*SOURCE:\s*([^|\n]*)\|?\s*([^\n]*)\n?/i);
+    if (m) { srcName = m[1].trim(); srcCode = ttsCode(m[2].trim(), 'en-US'); translation = full.slice(m[0].length).replace(/^\s*\n/, ''); }
+    else if (!/^\s*S(O(U(R(C(E)?)?)?)?)?$/i.test(full)) translation = full;
+  };
+  try {
+    const { truncated } = await tr.sample(prompt, { modelTier: 'quick', signal: ctl.signal,
+      onText: ({ text: full }) => { if (ctl !== tr.ctl) return; parse(full); if (srcName) from.textContent = srcName; if (translation) { out.classList.remove('msg'); out.textContent = translation; } } });
+    if (ctl !== tr.ctl) return;
+    if (!srcName) from.textContent = 'Detected';
+    if (truncated) out.textContent += '\n\n(Cut short. Select a shorter passage.)';
+    if (TTS && translation) {
+      const d = document.createElement('div'); d.className = 'say';
+      d.innerHTML = '<button data-say="src">🔊 Original</button><button data-say="dst">🔊 Translation</button>';
+      body.appendChild(d);
+      d.querySelector('[data-say="src"]').onclick = () => say(text, srcCode);
+      d.querySelector('[data-say="dst"]').onclick = () => say(translation, tCode);
+    }
+  } catch (e) {
+    if (ctl !== tr.ctl || (e && e.code === 'cancelled')) return;
+    out.classList.add('msg', 'warn'); out.textContent = trError(e);
+  }
+}
+
+let dbP = null;
+const getDb = () => (dbP ||= (window.claude?.use ? window.claude.use('db') : Promise.resolve(null)));
+/* delete a note (question + answer): click once to arm, again to delete; Undo for 8 s */
+let toastT;
+function toast(msg, undo) {
+  const t = $('#toast'); t.textContent = ''; const s = document.createElement('span'); s.textContent = msg; t.appendChild(s);
+  if (undo) { const b = document.createElement('button'); b.textContent = 'Undo'; b.onclick = () => { t.hidden = true; undo(); }; t.appendChild(b); }
+  t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, undo ? 8000 : 3500);
+}
+function armDelete(btn, id) {
+  if (!btn) return;
+  btn.onclick = e => {
+    e.stopPropagation();
+    if (!btn.classList.contains('armed')) {
+      btn.dataset.label = btn.textContent; btn.classList.add('armed'); btn.textContent = 'Click again to delete';
+      setTimeout(() => { if (btn.isConnected && btn.classList.contains('armed')) { btn.classList.remove('armed'); btn.textContent = btn.dataset.label; } }, 4000);
+      return;
+    }
+    btn.disabled = true; deleteNote(id);
+  };
+}
+async function deleteNote(id) {
+  const note = state.notes.find(n => n.id === id); if (!note) return;
+  const db = await getDb();
+  if (!db) { toast('Sign in to Claude to delete notes.'); return; }
+  const { id: _id, ...data } = note;
+  try {
+    await db.collection('qa').doc(id).delete();
+    hidePop();
+    toast('Note deleted.', async () => {
+      try { await db.collection('qa').doc(id).set(data); toast('Note restored.'); }
+      catch (e) { toast('Could not restore it (' + (e && e.code || 'error') + ').'); }
+    });
+  } catch (e) {
+    toast('Not deleted (' + (e && e.code || 'error') + '). Only people who can edit this reader can delete notes.');
+    document.querySelectorAll('button.del[disabled]').forEach(b => { b.disabled = false; b.classList.remove('armed'); if (b.dataset.label) b.textContent = b.dataset.label; });
+  }
+}
+$('#send').onclick = async () => {
+  const q = $('#askText').value.trim(); const sel = state.sel; const msg = $('#askMsg');
+  if (!sel) return;
+  if (!q) { msg.className = 'warn'; msg.textContent = 'Type a question or pick one of the suggestions.'; return; }
+  $('#send').disabled = true; msg.className = ''; msg.textContent = 'Sending…';
+  const db = await getDb();
+  if (!db) { msg.className = 'warn'; msg.textContent = 'Questions can only be sent when you are signed in to Claude. Open this page from the Claude app.'; $('#send').disabled = false; return; }
+  try {
+    await db.collection('qa').doc().set({ doc: sel.doc, page: sel.page, section: sel.section || '', quote: sel.quote, question: q.slice(0, 2000),
+      asked_at: new Date().toISOString(), status: 'open' });
+    msg.className = 'ok'; msg.textContent = 'Saved. Ask more anytime; say “go” in the chat and Claude answers them there and here.';
+    $('#askText').value = ''; setTimeout(hideAsk, 2400);
+  } catch (e) {
+    msg.className = 'warn'; msg.textContent = 'Not sent (' + (e && e.code || 'error') + '). Your question is kept; press Send again.';
+    $('#send').disabled = false;
+  }
+};
+
+/* notes from the shared store (Claude writes them after answering) */
+(async () => {
+  const db = await getDb();
+  if (!db) return;
+  MD.forEach(m => db.doc(m.key + '/current').onSnapshot(d => {
+    state.md[m.key] = d.exists ? d.data() : {};
+    if (state.view === 'md' && state.mdKey === m.key) { renderSummary(); if (state.drawerTab === 'toc') renderDrawer(); }
+  }, () => {}));
+  db.collection('qa').orderBy('asked_at').onSnapshot(snap => {
+    state.notes = snap.docs.filter(d => d.exists).map(d => ({ id: d.id, ...d.data() }));
+    const open = state.notes.filter(n => n.status !== 'answered').length;
+    const c = $('#ncount'); c.textContent = open ? `${state.notes.length} · ${open} waiting` : state.notes.length; c.hidden = !state.notes.length;
+    refreshHighlights(); if (state.drawerTab === 'notes') renderDrawer();
+  }, () => {});
+})();
+
+const startDoc = (location.hash || '').replace('#', '');
+if (mdByKey(startDoc)) openMd(startDoc); else openDoc(CFG.docs.some(d => d.key === startDoc) ? startDoc : CFG.docs[0].key);
+})();
+</script>

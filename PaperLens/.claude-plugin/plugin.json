@@ -1,0 +1,17 @@
+{
+  "name": "paperlens",
+  "displayName": "PaperLens",
+  "version": "1.0.0",
+  "description": "Read a research paper end to end with Claude: finds it in Zotero or online, saves the supplements, writes a summary shaped by the paper type (omics, wet-lab, method, review) and builds a Paper Reader page where you select any passage to ask Claude or translate it.",
+  "author": {
+    "name": "Yufan Chen",
+    "url": "https://github.com/yufchen723"
+  },
+  "homepage": "https://github.com/yufchen723/UsefulTools/tree/main/PaperLens",
+  "repository": "https://github.com/yufchen723/UsefulTools",
+  "license": "MIT",
+  "keywords": ["research", "papers", "literature", "zotero", "summary", "pdf", "google-scholar", "translation", "science"],
+  "documentationUrl": "https://github.com/yufchen723/UsefulTools/tree/main/PaperLens#readme",
+  "supportUrl": "https://github.com/yufchen723/UsefulTools/issues",
+  "privacyPolicyUrl": "https://github.com/yufchen723/UsefulTools/tree/main/PaperLens#privacy-and-data"
+}

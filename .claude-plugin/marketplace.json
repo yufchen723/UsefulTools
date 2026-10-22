@@ -1,0 +1,16 @@
+{
+  "name": "usefultools",
+  "description": "Small tools by Yufan Chen for daily research work with Claude.",
+  "owner": {
+    "name": "Yufan Chen",
+    "url": "https://github.com/yufchen723"
+  },
+  "plugins": [
+    {
+      "name": "paperlens",
+      "source": "./PaperLens",
+      "description": "Read a research paper end to end: paper folder, supplements, a summary shaped by the paper type, and a Paper Reader page with Ask Claude and instant Translate.",
+      "category": "research"
+    }
+  ]
+}
