@@ -2,6 +2,10 @@
 
 Read a research paper end to end with Claude. Give it a title, DOI or link; PaperLens finds the paper, saves the supplements, writes a summary shaped by the kind of paper it is, and builds a **Paper Reader** page where you select any passage to ask Claude about it or translate it.
 
+![PaperLens overview](docs/overview.png)
+
+**Left:** `summary.md`, the twelve-part summary opened in the side panel. **Right:** the Paper Reader — one tab per document, the publisher's header as cover, Ask Claude and Translate on any selection, and the Contents · Notes drawer with every question and answer.
+
 ## What you get for each paper
 
 - **A paper folder** with the main text, the publisher's supplementary files (SI, tables, peer review file, reporting summary), plain-text copies for fast search, and `links.md`: every code, data and portal link the paper points to.
