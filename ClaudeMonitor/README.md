@@ -11,7 +11,10 @@ The orb floats above every app and every desktop, including full-screen apps. Dr
 ## Features
 
 - **Usage at a glance** — session and weekly utilization as animated liquid, with the percentage and a countdown to each reset. Same numbers as *Settings → Usage* on claude.ai, refreshed every 60 s.
-- **Chat activity cards** — every chat that is running, waiting for permission, or finished-but-unchecked shows up under the orb. Checked every 6 s. Works for chats started in the Claude desktop app or on the web.
+- **Activity cards** — every chat that is running, waiting for permission, or finished-but-unchecked shows up under the orb. Checked every 6 s. Covers:
+  - chats and Cowork tasks in the Claude desktop app or on the web,
+  - cloud Claude Code sessions (claude.ai/code) — tagged `CODE`,
+  - terminal Claude Code sessions on this machine — tagged `CLI` (via Claude Code hooks, installed automatically).
 - **One-click jump** — Allow / Check buttons open the chat so you can grant the permission or review the result.
 - **Always on top, everywhere** — all Spaces, full-screen apps, every monitor.
 - **Freely resizable** — scroll wheel or trackpad pinch on the orb, or pick a preset from the menu.
@@ -39,7 +42,9 @@ ClaudeMonitor/
 
 ## How it works
 
-Usage comes from the same endpoint the claude.ai settings page uses; chat activity from each conversation's `live_status`. Both are unofficial and may change — if the orb shows **Offline**, that is the first thing to check. The app talks only to claude.ai and keeps your sign-in in its own private browser store.
+Usage comes from the same endpoint the claude.ai settings page uses; chat and cloud-session activity from the same APIs the web app polls (`live_status` per conversation, `worker_status` per code session). These are unofficial and may change — if the orb shows **Offline**, that is the first thing to check. The app talks only to claude.ai and keeps your sign-in in its own private browser store.
+
+Terminal Claude Code sessions never touch the server, so they are tracked locally: the installer registers a [Claude Code hook](https://docs.claude.com/en/docs/claude-code/hooks) that writes one small JSON file per session on each event (prompt submitted, tool use, permission prompt, stop, session end). The orb reads those files. Hooks apply to sessions started after installation.
 
 ## License
 

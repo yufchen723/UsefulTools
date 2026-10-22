@@ -419,10 +419,35 @@ final class ClaudeSession: NSObject, WKNavigationDelegate, WKUIDelegate, NSWindo
             if (r.ok) { const d = await r.json(); const x = d.response_shape || d; req = (x.requires_action_details_list || []).length; }
           } catch (e) {}
         }
-        out.push({ id: c.uuid, title: c.name || '', live: live, req: req,
+        out.push({ id: c.uuid, kind: 'chat', title: c.name || '', live: live, req: req,
                    startedMs: ms(c.live_status_started_at), settledMs: ms(c.last_settled_at), updatedMs: ms(c.updated_at),
                    url: '/chat/' + c.uuid });
       }
+      // Cloud Claude Code sessions (claude.ai/code). Skip ones that back a chat above.
+      try {
+        const linked = new Set([...byId.values()].map(c => c.workspace_session_id).filter(Boolean));
+        const H = { 'anthropic-version': '2023-06-01' };
+        const r = await fetch('/v1/code/sessions?exclude_tags=-&include_trigger_sessions=true&limit=40', { credentials: 'include', headers: H });
+        if (r.ok) {
+          const d = (await r.json()).data || [];
+          for (const s of d) {
+            if (!s || !s.id || linked.has(s.id) || s.title === '__warming__') continue;
+            if ((s.tags || []).some(t => t.startsWith('bard-conversation:'))) continue;
+            const worker = (s.worker_status || '').toLowerCase(), bucket = (s.status_bucket || '').toLowerCase();
+            const busy = (worker && worker !== 'idle') || bucket === 'working';
+            if (!busy && !tracked.has(s.id)) continue;
+            let x = s, req = 0;
+            try { const rr = await fetch('/v1/code/sessions/' + s.id, { credentials: 'include', headers: H }); if (rr.ok) { const dd = await rr.json(); x = dd.response_shape || dd; } } catch (e) {}
+            req = (x.requires_action_details_list || []).length;
+            const live = busy ? (req > 0 || bucket === 'blocked' ? 'permission' : 'running') : '';
+            let url = x.session_url || s.session_url || '';
+            try { if (url) { const u = new URL(url); url = u.pathname + u.search; } } catch (e) {}
+            if (!url) url = '/code/' + s.id.replace(/^cse_/, 'session_');
+            out.push({ id: s.id, kind: 'code-cloud', title: x.title || s.title || 'Claude Code', live, req,
+                       startedMs: 0, settledMs: ms(x.last_event_at || s.last_event_at), updatedMs: ms(x.updated_at || s.updated_at), url });
+          }
+        }
+      } catch (e) {}
       return JSON.stringify({ sessions: out });
     } catch (e) {
       return JSON.stringify({ error: String(e) });
@@ -644,6 +669,41 @@ struct OrbTask: Codable {
     var startedAt: Double      // ms since 1970
     var endedAt: Double?
     var idleSeen: Int
+    var kind: String?          // chat | code-cloud | code-local
+    var cwd: String?
+}
+
+/// Terminal Claude Code sessions, written by hooks/claude-monitor-hook.py.
+enum LocalCodeSessions {
+    static var dir: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/ClaudeMonitor/code-sessions")
+    }
+    static func read() -> [[String: Any]] {
+        guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { return [] }
+        var out: [[String: Any]] = []
+        let now = Date().timeIntervalSince1970 * 1000
+        for f in files where f.pathExtension == "json" {
+            guard let d = try? Data(contentsOf: f), var o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any],
+                  let id = o["id"] as? String else { continue }
+            var state = (o["state"] as? String) ?? ""
+            let updated = (o["updatedAt"] as? NSNumber)?.doubleValue ?? 0
+            // If the claude process is gone (terminal closed without SessionEnd), a running card would stick forever.
+            if state != "done", let pid = (o["pid"] as? NSNumber)?.int32Value, pid > 0, kill(pid, 0) != 0, errno == ESRCH {
+                if now - updated > 15_000 { try? FileManager.default.removeItem(at: f); continue }
+            }
+            if state.isEmpty { continue }
+            if state != "done" && now - updated > 6 * 3600_000 { state = "done"; o["endedAt"] = updated }
+            out.append(["id": id, "kind": "code-local", "title": (o["title"] as? String) ?? "Claude Code",
+                        "live": state, "req": state == "permission" ? 1 : 0,
+                        "startedMs": (o["startedAt"] as? NSNumber)?.doubleValue ?? updated,
+                        "settledMs": (o["endedAt"] as? NSNumber)?.doubleValue ?? 0,
+                        "url": "", "cwd": (o["cwd"] as? String) ?? ""])
+        }
+        return out
+    }
+    static func remove(_ id: String) {
+        try? FileManager.default.removeItem(at: dir.appendingPathComponent(id + ".json"))
+    }
 }
 
 // MARK: - App
@@ -764,7 +824,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     func pushTasks() {
         orb.setTasks(tasks.map { t in
-            var o: [String: Any] = ["id": t.id, "title": t.title, "state": t.state, "bucket": t.bucket, "startedAt": t.startedAt]
+            var o: [String: Any] = ["id": t.id, "title": t.title, "state": t.state, "bucket": t.bucket, "startedAt": t.startedAt, "kind": t.kind ?? "chat"]
             if let e = t.endedAt { o["endedAt"] = e }
             return o
         })
@@ -777,7 +837,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         web.fetchSessions(tracked: tracked) { [weak self] list in
             guard let self = self else { return }
             self.polling = false
-            if let list = list { self.ingest(list) }
+            self.ingest((list ?? []) + LocalCodeSessions.read())
         }
     }
 
@@ -793,6 +853,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let url = s["url"] as? String ?? ""
             let startedMs = (s["startedMs"] as? NSNumber)?.doubleValue ?? 0
             let settledMs = (s["settledMs"] as? NSNumber)?.doubleValue ?? 0
+            let kind = s["kind"] as? String ?? "chat"
+            let cwd = s["cwd"] as? String
             let busy = !live.isEmpty && !["done", "idle", "completed", "settled", "finished", "stopped", "none"].contains(live)
             let perm = req > 0 || live.contains("permission") || live.contains("approv") || live.contains("action") || live.contains("input") || live.contains("wait")
             if let i = tasks.firstIndex(where: { $0.id == id }) {
@@ -805,19 +867,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     t.idleSeen = 0
                 } else if t.state != "done" {
                     t.idleSeen += 1
-                    if t.idleSeen >= 2 {
+                    if t.idleSeen >= 2 || kind == "code-local" {
                         t.state = "done"
                         t.endedAt = settledMs > t.startedAt ? settledMs : now
                     }
                 }
                 t.title = title
                 t.bucket = live
+                t.kind = kind
+                if let c = cwd { t.cwd = c }
                 if !url.isEmpty { t.url = url }
                 if before != (t.state, t.title, t.bucket) { changed = true; orbLog("chat '\(title)' → \(t.state) (\(live))") }
                 tasks[i] = t
             } else if busy {
                 tasks.append(OrbTask(id: id, title: title, url: url, state: perm ? "permission" : "running",
-                                     bucket: live, startedAt: startedMs > 0 ? startedMs : now, endedAt: nil, idleSeen: 0))
+                                     bucket: live, startedAt: startedMs > 0 ? startedMs : now, endedAt: nil, idleSeen: 0,
+                                     kind: kind, cwd: cwd))
                 changed = true
                 orbLog("chat '\(title)' started (\(live), req=\(req))")
             }
@@ -830,6 +895,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let t = tasks[i]
         openChat(t)
         if action == "check" {
+            if t.kind == "code-local" { LocalCodeSessions.remove(t.id) }
             tasks.remove(at: i)
             saveTasks()
             pushTasks()
@@ -837,6 +903,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func openChat(_ t: OrbTask) {
+        if t.kind == "code-local" {
+            // A terminal session: bring the terminal forward (the one that was frontmost most recently).
+            let ws = NSWorkspace.shared
+            let terminals = ["com.googlecode.iterm2", "com.apple.Terminal", "dev.warp.Warp-Stable", "com.mitchellh.ghostty", "net.kovidgoyal.kitty", "com.microsoft.VSCode", "com.todesktop.230313mzl4w4u92"]
+            if let app = ws.runningApplications.first(where: { terminals.contains($0.bundleIdentifier ?? "") }) {
+                app.activate(options: [])
+                orbLog("activated \(app.bundleIdentifier ?? "") for local code session")
+            }
+            return
+        }
         let path = t.url.isEmpty ? "/chat/" + t.id : t.url
         let ws = NSWorkspace.shared
         // Prefer the desktop app: try its URL scheme first, then just bring the app forward.
@@ -856,6 +932,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func clearFinished() {
+        for t in tasks where t.state == "done" && t.kind == "code-local" { LocalCodeSessions.remove(t.id) }
         tasks.removeAll { $0.state == "done" }
         saveTasks()
         pushTasks()

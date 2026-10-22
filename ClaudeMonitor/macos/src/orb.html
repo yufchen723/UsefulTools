@@ -61,6 +61,8 @@
   .txt { flex: 1 1 auto; min-width: 0; line-height: 1.25; }
   .t1 { font: 600 11.5px -apple-system, "PingFang SC", sans-serif; color: #f2f6ff;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kind { display: inline-block; font: 700 8px "SF Mono", ui-monospace, Menlo, monospace; letter-spacing: .5px; color: rgb(var(--c));
+          border: 1px solid rgba(var(--c), .6); border-radius: 4px; padding: 1px 3px; margin-right: 5px; vertical-align: 1px; }
   .t2 { font: 500 10px "SF Mono", ui-monospace, Menlo, monospace; color: rgb(var(--c));
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .btn {
@@ -400,7 +402,7 @@
     box.innerHTML = list.slice(0, MAX).map(t => `
       <div class="task ${t.state}" data-id="${esc(t.id)}">
         <div class="dot"></div>
-        <div class="txt"><div class="t1">${esc(t.title)}</div><div class="t2" data-l2="${esc(t.id)}">${esc(line2(t))}</div></div>
+        <div class="txt"><div class="t1">${t.kind === 'code-local' ? '<span class="kind">CLI</span>' : t.kind === 'code-cloud' ? '<span class="kind">CODE</span>' : ''}${esc(t.title)}</div><div class="t2" data-l2="${esc(t.id)}">${esc(line2(t))}</div></div>
         ${t.state === 'done' ? '<div class="btn">✓ Check</div>' : t.state === 'permission' ? '<div class="btn">⚑ Allow</div>' : '<div class="go">›</div>'}
       </div>`).join('') + (list.length > MAX ? `<div id="more">+${list.length - MAX} more</div>` : '');
   }

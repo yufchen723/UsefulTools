@@ -26,15 +26,24 @@ To rebuild after editing the source, run `Install.command` again.
 | **✓ Check** (green card) | Open the chat and remove the card |
 | Menu → Clear finished chats | Remove all green cards at once |
 
+## Claude Code hooks
+
+`Install.command` also registers a hook in `~/.claude/settings.json` so terminal Claude Code sessions show up as `CLI` cards. It only adds its own entry and leaves your existing hooks alone. To remove it:
+
+```
+python3 hooks/install-hooks.py --remove
+```
+
 ## Source
 
 - `src/main.swift` — the native app: a transparent, non-activating `NSPanel` that floats at `.floating` level across all Spaces, a hidden `WKWebView` that holds your claude.ai sign-in and reads usage and chat status, the menu bar item, and the chat tracker.
 - `src/orb.html` — the orb itself, drawn on a `<canvas>`: liquid waves, bubbles, the HUD ring, countdown pills, and the activity cards.
-- `build.sh` — compiles with `swiftc`, assembles the `.app` bundle, ad-hoc signs it, and writes a LaunchAgent for launch-at-login.
+- `hooks/claude-monitor-hook.py` — the Claude Code hook; writes per-session state to `~/Library/Application Support/ClaudeMonitor/code-sessions/`.
+- `build.sh` — compiles with `swiftc`, assembles the `.app` bundle, ad-hoc signs it, writes a LaunchAgent for launch-at-login, and installs the hook.
 
 Logs: `~/Library/Logs/ClaudeUsageOrb/orb.log`.
 
 ## Uninstall
 
-Quit from the menu, then delete `~/Applications/ClaudeUsageOrb.app` and `~/Library/LaunchAgents/com.yufan.claude-usage-orb.plist`.
+Quit from the menu, run `python3 hooks/install-hooks.py --remove`, then delete `~/Applications/ClaudeUsageOrb.app`, `~/Library/LaunchAgents/com.yufan.claude-usage-orb.plist` and `~/Library/Application Support/ClaudeMonitor`.
 

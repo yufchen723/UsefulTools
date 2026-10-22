@@ -39,5 +39,12 @@ cat > "$AGENT" <<EOF
 </dict></plist>
 EOF
 
+# Claude Code terminal sessions: install the hook script + register it in ~/.claude/settings.json
+SUPPORT="$HOME/Library/Application Support/ClaudeMonitor"
+mkdir -p "$SUPPORT/code-sessions"
+cp hooks/claude-monitor-hook.py "$SUPPORT/claude-monitor-hook.py"
+chmod +x "$SUPPORT/claude-monitor-hook.py"
+python3 hooks/install-hooks.py || echo "(Claude Code hooks not installed — terminal sessions won't show; everything else works)"
+
 open "$APP"
 echo "BUILD_OK — Claude Usage Orb is running."
