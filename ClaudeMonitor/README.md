@@ -14,7 +14,7 @@ The orb floats above every app and every desktop, including full-screen apps. Dr
 - **Activity cards** — every chat that is running, waiting for permission, or finished-but-unchecked shows up under the orb. Checked every 6 s. Covers:
   - chats and Cowork tasks in the Claude desktop app or on the web,
   - cloud Claude Code sessions (claude.ai/code) — tagged `CODE`,
-  - terminal Claude Code sessions on this machine — tagged `CLI` (via Claude Code hooks, installed automatically).
+  - terminal Claude Code sessions on this machine — tagged `CLI` (macOS: via Claude Code hooks, installed automatically; Linux: by reading Claude Code's own session status files).
 - **One-click jump** — Allow / Check buttons open the chat so you can grant the permission or review the result.
 - **Always on top, everywhere** — all Spaces, full-screen apps, every monitor.
 - **Freely resizable** — scroll wheel or trackpad pinch on the orb, or pick a preset from the menu.
@@ -26,7 +26,7 @@ The orb floats above every app and every desktop, including full-screen apps. Dr
 | Platform | Status | Go to |
 | --- | --- | --- |
 | macOS | Stable, in daily use.<br>Monitors Chats, Cowork tasks, and Claude Code (cloud + terminal). | [`macos/`](macos/) |
-| Linux | In testing | coming soon |
+| Linux | Beta.<br>Monitors Claude Code terminal sessions only for now (usage + chat cards untested). | [`linux/`](linux/) |
 | Windows | In testing | coming soon |
 
 All versions share the same orb (`orb.html`) and the same features; only the native shell differs.
@@ -37,7 +37,8 @@ All versions share the same orb (`orb.html`) and the same features; only the nat
 ClaudeMonitor/
 ├── README.md          this overview
 ├── docs/overview.png
-└── macos/             native Swift app + installer
+├── macos/             native Swift app + installer
+└── linux/             Electron app + X11 helper
 ```
 
 ## How it works
