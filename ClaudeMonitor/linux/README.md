@@ -2,7 +2,7 @@
 
 Electron build. See the [overview](../README.md) for what the orb shows.
 
-**Status:** stable, in daily use for **Claude Code terminal sessions**. Usage percentages and chat/Cowork cards need a claude.ai sign-in, which is present in the code but not yet verified on Linux — treat them as experimental.
+**Status:** stable, in daily use. Usage percentages and chat/Cowork cards work as on macOS; for Claude Code it monitors **terminal sessions only** (no cloud sessions yet).
 
 ## Requirements
 

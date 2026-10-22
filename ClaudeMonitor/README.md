@@ -26,7 +26,7 @@ The orb floats above every app and every desktop, including full-screen apps. Dr
 | Platform | Status | Go to |
 | --- | --- | --- |
 | macOS | Stable, in daily use.<br>Monitors Chats, Cowork tasks, and Claude Code (cloud + terminal). | [`macos/`](macos/) |
-| Linux | Stable, in daily use.<br>Monitors Claude Code terminal sessions (chat / Cowork cards not yet verified on Linux). | [`linux/`](linux/) |
+| Linux | Stable, in daily use.<br>Monitors Claude Code terminal sessions only. | [`linux/`](linux/) |
 | Windows | In testing.<br>Monitors Chats, Cowork tasks, and Claude Code (cloud + terminal). | [`windows/`](windows/) |
 
 All versions share the same orb (`orb.html`) and the same features; only the native shell differs.
