@@ -8,13 +8,15 @@
     width: 100%; height: 100%;
     -webkit-user-select: none; user-select: none; cursor: default;
     font-family: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+    /* tool identity colours — only ever say WHICH tool, never how much is used */
+    --tool-claude: #ffb27a; --tool-codex: #8fd8ff;
   }
   #pills {
     position: absolute; top: 3px; left: calc(50% - 75px); width: 150px;
-    display: flex; justify-content: center; gap: 4px;
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px;
   }
   .pill {
-    min-width: 58px; height: 20px; box-sizing: border-box; padding: 0 6px;
+    min-width: 0; width: 100%; height: 20px; box-sizing: border-box; padding: 0 6px;
     border-radius: 10px; display: flex; align-items: center; justify-content: center; gap: 3px;
     font: 600 11px "SF Mono", ui-monospace, Menlo, monospace; letter-spacing: .2px; white-space: nowrap;
     color: #7dffb8; background: rgba(8, 12, 20, .80);
@@ -24,8 +26,40 @@
   }
   .pill .ic { font-size: 10px; opacity: .85; }
   .pill.hover { font-size: 10.5px; }
+  .pill .tx { min-width: 0; flex: 1 1 auto; display: flex; justify-content: center; overflow: hidden; }
+  .pill .value { display: block; flex: 0 0 auto; transform-origin: center; }
+  /* Exact reset dates get the full pill width on hover; labels return on mouse leave. */
+  .pill.hover .ic, .quad .pill.hover .tool, .quad .pill.hover .win { display: none; }
+  .pill.hover .tx { font: 600 9.5px/1.2 "SF Mono", ui-monospace, Menlo, monospace; letter-spacing: 0; }
+  .quad .pill.hover .tx { font-size: 9px; }
   .stale .pill { opacity: .55; }
   canvas { position: absolute; top: 27px; left: calc(50% - 70px); width: 140px; height: 140px; }
+
+  /* ---- Claude + Codex mode (body.quad): legend + 2×2 pills (one row per tool); everything below moves down 26px ---- */
+  #legend { display: none; position: absolute; top: 2px; left: 0; right: 0; justify-content: center; gap: 12px;
+            font: 700 6.5px -apple-system, sans-serif; letter-spacing: 1px; text-transform: uppercase; }
+  #legend span { display: flex; align-items: center; gap: 3px; }
+  #legend i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; box-shadow: 0 0 4px currentColor; }
+  #legend .c { color: var(--tool-claude); } #legend .x { color: var(--tool-codex); }
+  .quad #legend { display: flex; }
+  #pXS, #pXW { display: none; }
+  .quad #pXS, .quad #pXW { display: flex; }
+  .quad #pills { top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 4px; }
+  .quad .pill { min-width: 0; height: 17px; padding: 0 5px; border-radius: 9px; font-size: 9.5px; }
+  .quad .pill.hover { font-size: 9px; }
+  .pill .tool { display: none; width: 5px; height: 5px; border-radius: 50%; flex: 0 0 auto; box-shadow: 0 0 4px currentColor; }
+  .pill .win { display: none; font-size: 7px; font-weight: 700; letter-spacing: .4px; padding-right: 3px; margin-right: 1px;
+               border-right: 1px solid rgba(255,255,255,.18); color: #fff; opacity: .8; }
+  .quad .pill .tool, .quad .pill .win { display: inline-block; }
+  .pill .tool.claude { background: var(--tool-claude); color: var(--tool-claude); }
+  .pill .tool.codex { background: var(--tool-codex); color: var(--tool-codex); }
+  .quad canvas { top: 53px; }
+  .quad #tasks { top: 206px; }
+  /* tool identity on cards (Claude + Codex mode only): left stripe + tag, independent of the state colour */
+  .task.claude { --tool: var(--tool-claude); } .task.codex { --tool: var(--tool-codex); }
+  .quad .task::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--tool); box-shadow: 0 0 6px var(--tool); }
+  .quad .task { padding-left: 12px; }
+  .quad .kind { color: var(--tool); border-color: var(--tool); background: color-mix(in srgb, var(--tool) 12%, transparent); }
 
   /* ---- chat activity cards ---- */
   #tasks {
@@ -79,6 +113,12 @@
   body.witch { --grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.95' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1.6 -.55'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
   body.witch canvas { top: 24px; left: calc(50% - 75px); width: 150px; height: 154px; filter: drop-shadow(0 0 5px rgba(196, 150, 255, .5)) drop-shadow(0 2px 5px rgba(59, 37, 96, .22)); }
   body.witch #pills { top: 2px; }
+  body.witch.quad #pills { top: 11px; }
+  body.witch.quad canvas { top: 50px; }
+  body.witch.quad .pill { height: 18px; font-size: 11px; }
+  body.witch .pill .win { color: #3b2560; opacity: .7; border-right-color: rgba(59,37,96,.25); }
+  body.witch #legend { font-weight: 800; }
+  body.witch.quad .kind { color: #3b2560; background: rgba(255,255,255,.85); border-color: var(--tool); }
   body.witch .pill {
     height: 21px; border-radius: 11px; gap: 4px; padding: 0 8px 1px 7px;
     font: 700 13.5px "OrbHand", "Chalkboard SE", "Hannotate SC", sans-serif; letter-spacing: .2px;
@@ -115,6 +155,12 @@
   body.witch .task.done .dot { animation: none; }
   @keyframes twinkle { 50% { transform: scale(.6) rotate(45deg); opacity: .6; } }
   body.witch .t1 { font: 700 14px "OrbHand", "Hannotate SC", "PingFang SC", sans-serif; color: #3b2560; line-height: 1.1; }
+  /* Mixed Chinese/Latin titles use one UI stack instead of mismatched handwriting fallbacks.
+     Reference installed macOS fonts only; no CJK font files are bundled. */
+  body.witch .t1.cjk {
+    font: 600 12px/1.35 -apple-system, "PingFang SC", "Hiragino Sans GB", sans-serif;
+    font-synthesis: none; letter-spacing: 0;
+  }
   body.witch .t2 { font: 700 12px "OrbHand", "Hannotate SC", sans-serif; color: #6a4c9c; }
   body.witch .kind { font: 800 8px "OrbBubble", sans-serif; letter-spacing: .4px; color: #3b2560; background: rgba(var(--c), .9);
     border: 1px solid #fff; border-radius: 6px; padding: 1px 4px; vertical-align: 1.5px; }
@@ -130,9 +176,12 @@
 </style>
 </head>
 <body>
+<div id="legend"><span class="c"><i></i>Claude</span><span class="x"><i></i>Codex</span></div>
 <div id="pills">
-  <div class="pill" id="pS"><span class="ic">↻</span><span class="tx">--</span></div>
-  <div class="pill" id="pW"><span class="ic">↻</span><span class="tx">--</span></div>
+  <div class="pill" id="pS"><span class="tool claude"></span><span class="win">5H</span><span class="ic">↻</span><span class="tx">--</span></div>
+  <div class="pill" id="pW"><span class="tool claude"></span><span class="win">WK</span><span class="ic">↻</span><span class="tx">--</span></div>
+  <div class="pill" id="pXS"><span class="tool codex"></span><span class="win">5H</span><span class="ic">↻</span><span class="tx">--</span></div>
+  <div class="pill" id="pXW"><span class="tool codex"></span><span class="win">WK</span><span class="ic">↻</span><span class="tx">--</span></div>
 </div>
 <canvas id="orb"></canvas>
 <div id="tasks"></div>
@@ -154,7 +203,9 @@
   window.addEventListener('resize', setupCanvas);
 
   const mk = () => ({ target: 0, shown: 0, reset: null, has: false, bubbles: [] });
-  const S = { session: mk(), week: mk(), status: 'loading', stale: false, hover: false };
+  // Claude windows (always) + Codex windows (only when the native side sends `codex`).
+  const S = { session: mk(), week: mk(), xs: mk(), xw: mk(), codex: false, codexStale: false, status: 'loading', stale: false, hover: false };
+  const TOOL = { claude: '#ffb27a', codex: '#8fd8ff' };
 
   // ---------- colour: green -> yellow -> red as usage grows ----------
   const STOPS = [[0, 150], [40, 128], [55, 88], [70, 52], [85, 24], [100, 0]];
@@ -177,8 +228,8 @@
     return isNaN(t) ? null : t;
   }
   function setWin(o, w) {
-    o.has = true;
-    if (!w) { o.target = 0; o.reset = null; return; }
+    o.has = !!w && w.pct != null && Number.isFinite(Number(w.pct));
+    if (!o.has) { o.target = 0; o.shown = 0; o.reset = null; return; }
     const v = Number(w.pct);
     o.target = isFinite(v) ? Math.max(0, Math.min(100, v)) : 0;
     o.reset = parseTime(w.resetsAt);
@@ -194,11 +245,18 @@
       S.stale = true;
       if (!S.session.has) S.status = 'error';
     }
+    // Layout is controlled only by the selected style, never by arriving usage data.
+    S.codex = style === 'dual';
+    setWin(S.xs, p.codex && p.codex.session);
+    setWin(S.xw, p.codex && p.codex.week);
+    S.codexStale = !!(p.codex && p.codex.stale);
     document.body.classList.toggle('stale', S.stale || S.status !== 'ok');
+    document.body.classList.toggle('quad', S.codex);
     renderPills();
+    renderTasks();
   };
   window.orbHover = function (h) { S.hover = !!h; renderPills(); };
-  window.orbZoom = function (z) { zoom = z || 1; setupCanvas(); };
+  window.orbZoom = function (z) { zoom = z || 1; setupCanvas(); renderPills(); };
 
   // ---------- countdown pills ----------
   const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -227,14 +285,26 @@
     el.style.boxShadow = `0 0 7px hsla(${h},95%,55%,.30)`;
   }
   function renderPills() {
-    const ps = document.getElementById('pS'), pw = document.getElementById('pW');
     const ok = S.status === 'ok';
-    ps.querySelector('.tx').textContent = ok ? (S.hover ? fmtClock(S.session.reset, false) : fmtHours(S.session.reset)) : '--';
-    pw.querySelector('.tx').textContent = ok ? (S.hover ? fmtClock(S.week.reset, true) : fmtHours(S.week.reset)) : '--';
-    ps.classList.toggle('hover', S.hover); pw.classList.toggle('hover', S.hover);
-    ps.querySelector('.ic').textContent = style === 'witch' ? '☾' : '↻';
-    pw.querySelector('.ic').textContent = style === 'witch' ? '✦' : '↻';
-    stylePill(ps, S.session); stylePill(pw, S.week);
+    const rows = [['pS', S.session, false, ok], ['pW', S.week, true, ok], ['pXS', S.xs, false, S.codex], ['pXW', S.xw, true, S.codex]];
+    for (const [id, o, day, live] of rows) {
+      const el = document.getElementById(id);
+      el.querySelector('.tx').textContent = live ? (o.has ? (S.hover ? fmtClock(o.reset, day) : fmtHours(o.reset)) : 'N/A') : '--';
+      el.title = live && o.has && o.reset ? new Date(o.reset).toLocaleString() : el.querySelector('.tx').textContent;
+      el.classList.toggle('hover', S.hover);
+      el.querySelector('.ic').textContent = style === 'witch' ? (day ? '✦' : '☾') : '↻';
+      stylePill(el, o);
+      el.style.opacity = (id === 'pXS' || id === 'pXW') && S.codexStale ? '.55' : '';
+      // WebKit can enforce a larger minimum font at small page zoom levels.
+      // Fit the actual glyph box uniformly, rather than clipping dates or stretching letters.
+      const tx = el.querySelector('.tx'), value = document.createElement('span');
+      value.className = 'value'; value.textContent = tx.textContent;
+      tx.replaceChildren(value);
+      if (el.clientWidth > 0 && value.scrollWidth > 0) {
+        const fit = Math.min(1, tx.clientWidth / value.scrollWidth, (el.clientHeight - 2) / value.offsetHeight);
+        value.style.transform = `scale(${Math.max(0, fit)})`;
+      }
+    }
   }
   setInterval(renderPills, 15000);
   renderPills();
@@ -318,11 +388,95 @@
     ctx.restore();
   }
 
-  function drawShell(t) {
+  // Four-wedge mode (Claude + Codex): each quadrant fills outward from the centre.
+  // Radius grows with sqrt(p) so the filled AREA is proportional to the percentage.
+  function arcWave(a0, a1, r, amp, phase) {
+    const n = 40;
+    for (let i = 0; i <= n; i++) {
+      const a = a0 + (a1 - a0) * i / n;
+      const rr = r + amp * Math.sin(a * 7 + phase) + amp * 0.35 * Math.sin(a * 16 - phase * 1.4);
+      ctx.lineTo(CX + Math.cos(a) * rr, CY + Math.sin(a) * rr);
+    }
+  }
+  function drawWedge(a0, a1, o, t, dt, seed) {
+    const p = o.shown;
+    if (p <= 0.2) { o.bubbles.length = 0; return; }
+    const h = hue(p);
+    const r = R * Math.sqrt(p / 100);
+    const amp = 2.6 * Math.max(0, Math.min(1, p / 8, (100 - p) / 8));
+    ctx.save();
+    circlePath(R - 0.5); ctx.clip();
+    ctx.beginPath(); ctx.moveTo(CX, CY); ctx.arc(CX, CY, R + 2, a0, a1); ctx.closePath(); ctx.clip();
+    // back wave
+    ctx.beginPath(); ctx.moveTo(CX, CY); arcWave(a0 - .05, a1 + .05, r + 1.5, amp * .9, -t * 1.7 + seed); ctx.closePath();
+    ctx.fillStyle = `hsla(${h},90%,48%,.42)`; ctx.fill();
+    // front wave, dark at the centre, bright at the shoreline
+    const g = ctx.createRadialGradient(CX, CY, 0, CX, CY, Math.max(1, r + amp));
+    g.addColorStop(0, `hsla(${h + 12},90%,24%,.97)`);
+    g.addColorStop(.55, `hsla(${h + 6},90%,42%,.95)`);
+    g.addColorStop(1, `hsla(${h},95%,60%,.95)`);
+    const phase = t * 2.1 + seed;
+    ctx.beginPath(); ctx.moveTo(CX, CY); arcWave(a0 - .05, a1 + .05, r, amp, phase); ctx.closePath();
+    ctx.fillStyle = g; ctx.fill();
+    // sheen sweeping around the wedge
+    const sa = a0 + ((t * 0.5 + seed) % 1) * (a1 - a0);
+    ctx.save(); ctx.translate(CX, CY); ctx.rotate(sa);
+    const sg = ctx.createLinearGradient(0, -6, 0, 6);
+    sg.addColorStop(0, 'rgba(255,255,255,0)'); sg.addColorStop(.5, 'rgba(255,255,255,.08)'); sg.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = sg; ctx.fillRect(0, -6, R, 12); ctx.restore();
+    // bubbles drifting outward
+    const n = p > 4 ? 6 : 0;
+    while (o.bubbles.length < n) o.bubbles.push({ a: a0 + Math.random() * (a1 - a0), d: Math.random() * r, r: .8 + Math.random() * 1.6, v: 5 + Math.random() * 9, ph: Math.random() * 6 });
+    if (!n) o.bubbles.length = 0;
+    for (const b of o.bubbles) {
+      b.d += b.v * dt; b.ph += dt * 3;
+      if (b.d > r - 2) { b.d = 2; b.a = a0 + Math.random() * (a1 - a0); }
+      const a = b.a + Math.sin(b.ph) * .03;
+      ctx.beginPath(); ctx.arc(CX + Math.cos(a) * b.d, CY + Math.sin(a) * b.d, b.r, 0, Math.PI * 2);
+      ctx.fillStyle = `hsla(${h},100%,90%,.18)`; ctx.fill();
+      ctx.lineWidth = .7; ctx.strokeStyle = `hsla(${h},100%,92%,.55)`; ctx.stroke();
+    }
+    // glowing shoreline
+    ctx.beginPath(); arcWave(a0 - .05, a1 + .05, r, amp, phase);
+    ctx.shadowColor = `hsla(${h},100%,65%,.9)`; ctx.shadowBlur = 6;
+    ctx.strokeStyle = `hsla(${h},100%,82%,.95)`; ctx.lineWidth = 1.1; ctx.stroke();
+    ctx.restore();
+  }
+  // Tool name running vertically along its half of the rim, plus a short tick outside, in the tool's identity colour.
+  function rimLabel(text, side, color) {
+    ctx.save(); ctx.translate(CX + side * (R - 7), CY); ctx.rotate(side < 0 ? -Math.PI / 2 : Math.PI / 2);
+    ctx.font = '800 7.5px -apple-system, "SF Pro Text", sans-serif'; ctx.letterSpacing = '1.8px';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = color;
+    ctx.shadowColor = color; ctx.shadowBlur = 5; ctx.fillText(text, 0, 0); ctx.restore();
+    ctx.save(); ctx.strokeStyle = color; ctx.globalAlpha = .55; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(CX, CY, R + 9, side < 0 ? Math.PI - .35 : -.35, side < 0 ? Math.PI + .35 : .35); ctx.stroke(); ctx.restore();
+  }
+  // Percent + caption centred on (x, y) — used for the four wedge labels.
+  function drawLabelAt(x, y, o, caption, big, small) {
+    const val = o.has ? String(Math.round(o.shown)) : 'N/A';
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,.7)'; ctx.shadowBlur = 4; ctx.shadowOffsetY = 0.5;
+    ctx.fillStyle = '#fff'; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
+    const F = '-apple-system, "SF Pro Display", "Helvetica Neue", sans-serif';
+    ctx.font = `700 ${big}px ${F}`;
+    const wn = ctx.measureText(val).width;
+    ctx.font = `700 ${small}px ${F}`;
+    const suffix = o.has ? '%' : '';
+    const wp = ctx.measureText(suffix).width;
+    const sx = x - (wn + wp + 1) / 2, base = y + big * 0.36;
+    ctx.font = `700 ${big}px ${F}`; ctx.fillText(val, sx, base);
+    ctx.font = `700 ${small}px ${F}`; ctx.fillText(suffix, sx + wn + 1, base);
+    ctx.font = `600 ${small * 0.8}px -apple-system, "SF Pro Text", sans-serif`; ctx.letterSpacing = '0.8px';
+    ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,.78)';
+    ctx.fillText(caption, x, base + small + 3);
+    ctx.restore();
+  }
+
+  function drawShell(t, arcs) {
     const hL = hue(S.session.shown), hR = hue(S.week.shown);
     const live = S.status === 'ok';
-    // neon rim, one colour per half
-    for (const [a0, a1, h] of [[Math.PI / 2, Math.PI * 1.5, hL], [-Math.PI / 2, Math.PI / 2, hR]]) {
+    // neon rim, one colour per half (or per quadrant)
+    for (const [a0, a1, h] of arcs || [[Math.PI / 2, Math.PI * 1.5, hL], [-Math.PI / 2, Math.PI / 2, hR]]) {
       ctx.save();
       ctx.shadowColor = live ? `hsla(${h},100%,55%,.9)` : 'rgba(150,170,200,.5)';
       ctx.shadowBlur = 9 + 3 * Math.sin(t * 2);
@@ -355,14 +509,20 @@
     ctx.restore();
   }
 
-  function drawGlass() {
+  function drawGlass(quad) {
     ctx.save(); circlePath(R); ctx.clip();
     // divider
     const dg = ctx.createLinearGradient(0, CY - R, 0, CY + R);
     dg.addColorStop(0, 'rgba(230,240,255,0)'); dg.addColorStop(.5, 'rgba(230,240,255,.45)'); dg.addColorStop(1, 'rgba(230,240,255,0)');
     ctx.fillStyle = dg; ctx.fillRect(CX - 0.6, CY - R, 1.2, 2 * R);
-    ctx.fillStyle = 'rgba(230,240,255,.35)';
-    for (const q of [.25, .5, .75]) { const y = CY + R - q * 2 * R; ctx.fillRect(CX - 3.5, y - .5, 7, 1); }
+    if (quad) {
+      const hg2 = ctx.createLinearGradient(CX - R, 0, CX + R, 0);
+      hg2.addColorStop(0, 'rgba(230,240,255,0)'); hg2.addColorStop(.5, 'rgba(230,240,255,.45)'); hg2.addColorStop(1, 'rgba(230,240,255,0)');
+      ctx.fillStyle = hg2; ctx.fillRect(CX - R, CY - 0.6, 2 * R, 1.2);
+    } else {
+      ctx.fillStyle = 'rgba(230,240,255,.35)';
+      for (const q of [.25, .5, .75]) { const y = CY + R - q * 2 * R; ctx.fillRect(CX - 3.5, y - .5, 7, 1); }
+    }
     // highlights
     const hg = ctx.createLinearGradient(0, CY - R, 0, CY - R * .25);
     hg.addColorStop(0, 'rgba(255,255,255,.30)'); hg.addColorStop(1, 'rgba(255,255,255,0)');
@@ -378,14 +538,15 @@
 
   function drawLabel(side, o, caption) {
     const x = CX + side * R * 0.47;
-    const val = String(Math.round(o.shown));
+    const val = o.has ? String(Math.round(o.shown)) : 'N/A';
     ctx.save();
     ctx.shadowColor = 'rgba(0,0,0,.7)'; ctx.shadowBlur = 4; ctx.shadowOffsetY = 0.5;
     ctx.fillStyle = '#fff'; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
     ctx.font = '700 19px -apple-system, "SF Pro Display", "Helvetica Neue", sans-serif';
     const wn = ctx.measureText(val).width;
     ctx.font = '700 10px -apple-system, "SF Pro Display", sans-serif';
-    const wp = ctx.measureText('%').width;
+    const suffix = o.has ? '%' : '';
+    const wp = ctx.measureText(suffix).width;
     const sx = x - (wn + wp + 1) / 2;
     ctx.font = '700 19px -apple-system, "SF Pro Display", "Helvetica Neue", sans-serif';
     ctx.fillText(val, sx, CY + 5);
@@ -941,7 +1102,8 @@
     ctx.save();
     ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
     ctx.font = `800 21px ${BUBBLE}`; const wn = ctx.measureText(val).width;
-    ctx.font = `800 9.5px ${BUBBLE}`; const wp = ctx.measureText('%').width;
+    ctx.font = `800 9.5px ${BUBBLE}`; const suffix = o.has ? '%' : '';
+    const wp = ctx.measureText(suffix).width;
     const sx = x - (wn + wp + 1) / 2;
     const both = (fn) => { ctx.font = `800 21px ${BUBBLE}`; fn(val, sx, y); ctx.font = `800 9.5px ${BUBBLE}`; fn('%', sx + wn + 1, y); };
     ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(59,37,96,.55)'; ctx.lineWidth = 2.6;
@@ -1003,10 +1165,13 @@
   }
 
   window.orbStyle = function (s) {
-    style = s === 'witch' ? 'witch' : 'classic';
+    style = ['classic', 'witch', 'dual'].includes(s) ? s : 'classic';
+    S.codex = style === 'dual';
+    document.body.classList.toggle('quad', S.codex);
     document.body.classList.toggle('witch', style === 'witch');
     setupCanvas();
     renderPills();
+    renderTasks();
   };
 
   let lastT = 0, lastDraw = 0;
@@ -1020,8 +1185,36 @@
       o.shown += (tgt - o.shown) * Math.min(1, dt * 2.2);
       if (Math.abs(tgt - o.shown) < 0.05) o.shown = tgt;
     }
+    for (const o of [S.xs, S.xw]) {
+      const tgt = S.codex ? o.target : 0;
+      o.shown += (tgt - o.shown) * Math.min(1, dt * 2.2);
+      if (Math.abs(tgt - o.shown) < 0.05) o.shown = tgt;
+    }
     if (style === 'witch') { ctx.clearRect(0, 0, 150, 154); drawWitch(t, dt); return; }
     ctx.clearRect(0, 0, W, H);
+    if (S.codex) {
+      // Left half Claude, right half Codex; top row = 5-hour session, bottom row = week.
+      const ok = S.status === 'ok';
+      drawShell(t, [[Math.PI, Math.PI * 1.5, hue(S.session.shown)], [Math.PI / 2, Math.PI, hue(S.week.shown)],
+                    [-Math.PI / 2, 0, hue(S.xs.shown)], [0, Math.PI / 2, hue(S.xw.shown)]]);
+      drawWedge(Math.PI, Math.PI * 1.5, S.session, t, dt, 0);
+      drawWedge(Math.PI / 2, Math.PI, S.week, t, dt, 1.3);
+      drawWedge(-Math.PI / 2, 0, S.xs, t, dt, 2.1);
+      drawWedge(0, Math.PI / 2, S.xw, t, dt, 3.4);
+      drawGlass(true);
+      const d = R * 0.46;
+      if (ok) {
+        drawLabelAt(CX - d, CY - d - 3, S.session, 'SESSION', 13, 8);
+        drawLabelAt(CX - d, CY + d - 7, S.week, 'WEEK', 13, 8);
+      }
+      drawLabelAt(CX + d, CY - d - 3, S.xs, 'SESSION', 13, 8);
+      drawLabelAt(CX + d, CY + d - 7, S.xw, 'WEEK', 13, 8);
+      rimLabel('CLAUDE', -1, TOOL.claude); rimLabel('CODEX', 1, TOOL.codex);
+      if (ok && S.stale) { ctx.fillStyle = 'rgba(255,190,80,.9)'; ctx.beginPath(); ctx.arc(CX - 9, CY + R - 9, 2, 0, Math.PI * 2); ctx.fill(); }
+      if (S.codexStale) { ctx.fillStyle = 'rgba(255,190,80,.9)'; ctx.beginPath(); ctx.arc(CX + 9, CY + R - 9, 2, 0, Math.PI * 2); ctx.fill(); }
+      if (!ok) drawCenterText(S.status === 'login' ? ['Double-click', 'to sign in'] : S.status === 'error' ? ['Offline'] : ['Loading…'], t);
+      return;
+    }
     drawShell(t);
     drawLiquid(-1, S.session, t, dt);
     drawLiquid(1, S.week, t + 0.37, dt);
@@ -1062,16 +1255,24 @@
     const end = t.endedAt || now;
     return `Done ${clock(end)} · ${dur(end - t.startedAt, true)}`;
   }
+  // Card tag: Claude-only mode keeps the short CLI / CODE tags; Claude + Codex mode tags every card with its tool.
+  function tag(t) {
+    if (S.codex) return { 'codex-desktop': 'CODEX DESKTOP', 'codex-local': 'CODEX', 'code-local': 'CLAUDE CLI', 'code-cloud': 'CLAUDE CODE' }[t.kind] || 'CLAUDE';
+    return t.kind === 'codex-desktop' ? 'CODEX DESKTOP' : t.kind === 'code-local' ? 'CLI' : t.kind === 'code-cloud' ? 'CODE' : t.kind === 'codex-local' ? 'CODEX' : '';
+  }
   function renderTasks() {
     const box = document.getElementById('tasks');
     const order = { permission: 0, done: 1, running: 2 };
     const list = TASKS.slice().sort((a, b) => (order[a.state] - order[b.state]) || (b.startedAt - a.startedAt));
-    box.innerHTML = list.slice(0, MAX).map(t => `
-      <div class="task ${t.state}" data-id="${esc(t.id)}">
+    box.innerHTML = list.slice(0, MAX).map(t => {
+      const cjk = /[\u2e80-\u9fff\uf900-\ufaff]/.test(t.title);
+      const k = tag(t), tool = (t.kind === 'codex-local' || t.kind === 'codex-desktop') ? 'codex' : 'claude';
+      return `
+      <div class="task ${t.state} ${tool}" data-id="${esc(t.id)}">
         <div class="dot"></div>
-        <div class="txt"><div class="t1">${t.kind === 'code-local' ? '<span class="kind">CLI</span>' : t.kind === 'code-cloud' ? '<span class="kind">CODE</span>' : ''}${esc(t.title)}</div><div class="t2" data-l2="${esc(t.id)}">${esc(line2(t))}</div></div>
-        ${t.state === 'done' ? '<div class="btn">✓ Check</div>' : t.state === 'permission' ? '<div class="btn">⚑ Allow</div>' : '<div class="go">›</div>'}
-      </div>`).join('') + (list.length > MAX ? `<div id="more">+${list.length - MAX} more</div>` : '');
+        <div class="txt"><div class="t1${cjk ? ' cjk' : ''}">${k ? `<span class="kind">${k}</span>` : ''}${esc(t.title)}</div><div class="t2" data-l2="${esc(t.id)}">${esc(line2(t))}</div></div>
+        ${t.state === 'done' ? '<div class="btn">✓ Check</div>' : t.state === 'permission' ? '<div class="btn" title="Open the chat to review this approval">⚑ Allow</div>' : '<div class="go">›</div>'}
+      </div>`; }).join('') + (list.length > MAX ? `<div id="more">+${list.length - MAX} more</div>` : '');
   }
   function tick() {
     for (const t of TASKS) {

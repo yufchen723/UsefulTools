@@ -1,14 +1,17 @@
 // Claude Usage Orb — a floating, draggable desktop orb that shows Claude plan usage
-// (current 5-hour session on the left, weekly on the right).
+// (current 5-hour session on the left, weekly on the right), and — when OpenAI Codex
+// is installed — Codex plan usage too (left half Claude, right half Codex, top row the
+// 5-hour window, bottom row the week).
 // Build with ../build.sh
 
 import Cocoa
 import WebKit
+import SQLite3
 
 let kFrameName   = "ClaudeUsageOrbFrame"
 let kScaleKey    = "ClaudeUsageOrbScale"
 let kHiddenKey   = "ClaudeUsageOrbHidden"
-let kStyleKey    = "ClaudeUsageOrbStyle"     // "classic" | "witch"
+let kStyleKey    = "ClaudeUsageOrbStyle"     // "classic" | "witch" | "dual"
 let kAgentLabel  = "com.yufan.claude-usage-orb"
 let refreshEvery: TimeInterval = 60
 let minScale: CGFloat = 0.6
@@ -88,6 +91,7 @@ final class OrbPanel: NSPanel {
 
 let orbAreaHeight: CGFloat = 178        // CSS px of the orb + countdown pills
 let orbCenterFromTop: CGFloat = 97      // CSS px from the top of the window to the orb's centre
+let codexExtraHeight: CGFloat = 26      // the 2×2 pill grid + legend in Claude + Codex mode (see .quad in orb.html)
 let narrowWidth: CGFloat = 150
 let wideWidth: CGFloat = 240            // when task cards are showing
 let cardStep: CGFloat = 50              // card height 44 + gap 6
@@ -100,11 +104,15 @@ final class OrbWindowController: NSObject, WKNavigationDelegate {
     private(set) var scale: CGFloat
     private var pageLoaded = false
     private var lastPayload: String?
+    private var allTasks: [[String: Any]] = []
     private var lastTasks: String?
     private var taskCount = 0
     private var hovering = false
     private var zoomWork: DispatchWorkItem?
     private(set) var style: String = UserDefaults.standard.string(forKey: kStyleKey) ?? "classic"
+    private(set) var quad = false            // Claude + Codex mode: taller orb area
+    private var areaHeight: CGFloat { orbAreaHeight + (quad ? codexExtraHeight : 0) }
+    private var centerFromTop: CGFloat { orbCenterFromTop + (quad ? codexExtraHeight : 0) }
 
     init(scale: CGFloat) {
         self.scale = scale
@@ -150,7 +158,7 @@ final class OrbWindowController: NSObject, WKNavigationDelegate {
         }
         overlay.isOrbArea = { [weak self] p in
             guard let self = self else { return true }
-            return p.y >= self.overlay.bounds.height - orbAreaHeight * self.scale
+            return p.y >= self.overlay.bounds.height - self.areaHeight * self.scale
         }
 
         // Restore the last position (size always follows the chosen scale).
@@ -172,7 +180,7 @@ final class OrbWindowController: NSObject, WKNavigationDelegate {
 
     func ensureOnScreen() {
         let f = panel.frame
-        let orbRect = NSRect(x: f.midX - 50, y: f.maxY - orbAreaHeight * scale, width: 100, height: orbAreaHeight * scale)
+        let orbRect = NSRect(x: f.midX - 50, y: f.maxY - areaHeight * scale, width: 100, height: areaHeight * scale)
         let visible = NSScreen.screens.contains { $0.visibleFrame.intersects(orbRect) }
         if !visible { placeDefault() }
     }
@@ -182,16 +190,25 @@ final class OrbWindowController: NSObject, WKNavigationDelegate {
     var isVisible: Bool { panel.isVisible }
 
     /// Size for the current scale and number of task cards, keeping the orb itself fixed on screen.
-    private func relayout(oldScale: CGFloat) {
+    private func relayout(oldScale: CGFloat, oldCenterFromTop: CGFloat? = nil) {
         let old = panel.frame
         let shown = min(taskCount, maxCards)
-        var h = orbAreaHeight
+        var h = areaHeight
         if taskCount > 0 { h += 2 + CGFloat(shown) * cardStep + (taskCount > maxCards ? 18 : 0) }
         let w = taskCount > 0 ? wideWidth : narrowWidth
         let size = NSSize(width: w * scale, height: h * scale)
-        let orbCenterY = old.maxY - orbCenterFromTop * oldScale
-        let top = orbCenterY + orbCenterFromTop * scale
+        let orbCenterY = old.maxY - (oldCenterFromTop ?? centerFromTop) * oldScale
+        let top = orbCenterY + centerFromTop * scale
         panel.setFrame(NSRect(x: old.midX - size.width / 2, y: top - size.height, width: size.width, height: size.height), display: true)
+    }
+
+    /// Switch between the Claude-only layout and the Claude + Codex layout (taller pill area).
+    func setQuad(_ on: Bool) {
+        guard on != quad else { return }
+        let oldCenter = centerFromTop
+        quad = on
+        relayout(oldScale: scale, oldCenterFromTop: oldCenter)
+        ensureOnScreen()
     }
 
     func setScale(_ s: CGFloat) {
@@ -208,9 +225,12 @@ final class OrbWindowController: NSObject, WKNavigationDelegate {
     }
 
     func setStyle(_ s: String) {
+        guard ["classic", "witch", "dual"].contains(s) else { return }
         style = s
+        setQuad(s == "dual")
         UserDefaults.standard.set(s, forKey: kStyleKey)
         js("window.orbStyle && window.orbStyle('\(s)')")
+        setTasks(allTasks)
     }
 
     func send(_ payload: [String: Any]) {
@@ -221,6 +241,11 @@ final class OrbWindowController: NSObject, WKNavigationDelegate {
     }
 
     func setTasks(_ tasks: [[String: Any]]) {
+        allTasks = tasks
+        let tasks = tasks.filter { task in
+            let kind = task["kind"] as? String ?? "chat"
+            return style == "dual" || (kind != "codex-local" && kind != "codex-desktop")
+        }
         guard let data = try? JSONSerialization.data(withJSONObject: tasks),
               let s = String(data: data, encoding: .utf8) else { return }
         lastTasks = s
@@ -280,23 +305,7 @@ func orbLog(_ s: String) {
     }
 }
 
-/// One claude.ai web view shared by sign-in and usage reads, so cookies and
-/// Cloudflare clearance are always the same ones.
-final class ClaudeSession: NSObject, WKNavigationDelegate, WKUIDelegate, NSWindowDelegate {
-    let webView: WKWebView
-    private let hostWindow: NSWindow
-    private var ready = false
-    private var loading = false
-    private var waiters: [(Bool) -> Void] = []
-    private var popups: [(WKWebView, NSWindow)] = []
-    private var loginWindow: NSWindow?
-    private var statusLabel: NSTextField?
-    private var pollTimer: Timer?
-    private var closingLogin = false
-    var onLoginFinished: (() -> Void)?
-    var isLoginOpen: Bool { loginWindow != nil }
-
-    static let script = """
+let claudeUsageJS = """
     try {
       const get = async (p) => {
         const r = await fetch(p, { credentials: 'include', headers: { 'accept': 'application/json' } });
@@ -323,7 +332,43 @@ final class ClaudeSession: NSObject, WKNavigationDelegate, WKUIDelegate, NSWindo
     }
     """
 
-    override init() {
+/// A site the orb can sign in to and read usage from through a hidden web view.
+struct WebSite {
+    let name: String        // shown in the menu / log
+    let host: String        // cookie domain suffix
+    let readyURL: String    // cheap page that proves the session is alive
+    let loginURL: String
+    let checkJS: String     // async JS → 'ok' when signed in
+    let usageJS: String     // async JS → JSON {data} or {error, status}
+
+    static let claude = WebSite(
+        name: "claude.ai", host: "claude.ai",
+        readyURL: "https://claude.ai/api/organizations", loginURL: "https://claude.ai/login",
+        checkJS: "try { const r = await fetch('/api/organizations', {credentials:'include'}); if (!r.ok) return 'http ' + r.status; const j = await r.json(); return (Array.isArray(j) && j.length) ? 'ok' : 'empty'; } catch (e) { return 'err ' + e; }",
+        usageJS: claudeUsageJS)
+
+
+}
+
+/// One web view per site, shared by sign-in and usage reads, so cookies and
+/// Cloudflare clearance are always the same ones.
+final class WebSession: NSObject, WKNavigationDelegate, WKUIDelegate, NSWindowDelegate {
+    let site: WebSite
+    let webView: WKWebView
+    private let hostWindow: NSWindow
+    fileprivate var ready = false
+    fileprivate var loading = false
+    fileprivate var waiters: [(Bool) -> Void] = []
+    fileprivate var popups: [(WKWebView, NSWindow)] = []
+    fileprivate var loginWindow: NSWindow?
+    fileprivate var statusLabel: NSTextField?
+    fileprivate var pollTimer: Timer?
+    fileprivate var closingLogin = false
+    var onLoginFinished: (() -> Void)?
+    var isLoginOpen: Bool { loginWindow != nil }
+
+    init(site: WebSite) {
+        self.site = site
         let cfg = WKWebViewConfiguration()
         cfg.websiteDataStore = .default()
         cfg.preferences.javaScriptCanOpenWindowsAutomatically = true
@@ -337,10 +382,12 @@ final class ClaudeSession: NSObject, WKNavigationDelegate, WKUIDelegate, NSWindo
         webView.uiDelegate = self
         hostWindow.contentView = webView
     }
+}
 
+extension WebSession {
     func invalidate() { if loginWindow == nil { ready = false } }
 
-    private var onClaude: Bool { webView.url?.host?.hasSuffix("claude.ai") == true }
+    private var onClaude: Bool { webView.url?.host?.hasSuffix(site.host) == true }
 
     private func ensureReady(_ done: @escaping (Bool) -> Void) {
         if loginWindow != nil { done(onClaude); return }
@@ -348,7 +395,7 @@ final class ClaudeSession: NSObject, WKNavigationDelegate, WKUIDelegate, NSWindo
         waiters.append(done)
         if loading { return }
         loading = true
-        webView.load(URLRequest(url: URL(string: "https://claude.ai/api/organizations")!))
+        webView.load(URLRequest(url: URL(string: site.readyURL)!))
     }
 
     private func finish(_ ok: Bool) {
@@ -376,7 +423,7 @@ final class ClaudeSession: NSObject, WKNavigationDelegate, WKUIDelegate, NSWindo
     func fetch(_ done: @escaping (FetchOutcome) -> Void) {
         ensureReady { ok in
             guard ok else { orbLog("fetch: page not ready"); done(.failed("network")); return }
-            self.webView.callAsyncJavaScript(Self.script, arguments: [:], in: nil, in: .page) { result in
+            self.webView.callAsyncJavaScript(self.site.usageJS, arguments: [:], in: nil, in: .page) { result in
                 switch result {
                 case .success(let value):
                     guard let s = value as? String, let d = s.data(using: .utf8),
@@ -384,7 +431,7 @@ final class ClaudeSession: NSObject, WKNavigationDelegate, WKUIDelegate, NSWindo
                         orbLog("fetch: unparsable result"); done(.failed("parse")); return
                     }
                     if let data = obj["data"] as? [String: Any] {
-                        orbLog("fetch ok: five_hour=\(String(describing: (data["five_hour"] as? [String: Any])?["utilization"])) seven_day=\(String(describing: (data["seven_day"] as? [String: Any])?["utilization"]))")
+                        orbLog("\(self.site.name) fetch ok")
                         done(.ok(data)); return
                     }
                     orbLog("fetch error: \(s)")
@@ -493,7 +540,7 @@ final class ClaudeSession: NSObject, WKNavigationDelegate, WKUIDelegate, NSWindo
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 744),
                          styleMask: [.titled, .closable, .resizable, .miniaturizable],
                          backing: .buffered, defer: false)
-        w.title = "Sign in to Claude (used only to read usage)"
+        w.title = "Sign in to \(site.name) (used only to read usage)"
         w.isReleasedWhenClosed = false
         w.delegate = self
         let content = NSView(frame: NSRect(x: 0, y: 0, width: 480, height: 744))
@@ -527,7 +574,7 @@ final class ClaudeSession: NSObject, WKNavigationDelegate, WKUIDelegate, NSWindo
         closingLogin = false
         ready = false
         loading = false
-        webView.load(URLRequest(url: URL(string: "https://claude.ai/login")!))
+        webView.load(URLRequest(url: URL(string: site.loginURL)!))
         NSApp.activate(ignoringOtherApps: true)
         w.makeKeyAndOrderFront(nil)
         pollTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { [weak self] _ in self?.checkSignedIn() }
@@ -538,8 +585,7 @@ final class ClaudeSession: NSObject, WKNavigationDelegate, WKUIDelegate, NSWindo
 
     private func checkSignedIn() {
         guard loginWindow != nil, !closingLogin, onClaude else { return }
-        let js = "try { const r = await fetch('/api/organizations', {credentials:'include'}); if (!r.ok) return 'http ' + r.status; const j = await r.json(); return (Array.isArray(j) && j.length) ? 'ok' : 'empty'; } catch (e) { return 'err ' + e; }"
-        webView.callAsyncJavaScript(js, arguments: [:], in: nil, in: .page) { [weak self] res in
+        webView.callAsyncJavaScript(site.checkJS, arguments: [:], in: nil, in: .page) { [weak self] res in
             guard let self = self, self.loginWindow != nil, !self.closingLogin else { return }
             var s = "?"
             switch res {
@@ -664,6 +710,123 @@ enum ClaudeCodeUsage {
     }
 }
 
+// MARK: - Usage source 3: Codex app-server
+
+/// Use Codex's authenticated RPC interface; never substitute historical logs for live limits.
+enum CodexUsage {
+    struct Result {
+        var data: [String: Any]
+        var stale: Bool
+        var source: String
+    }
+
+    static var executable: URL? {
+        let paths = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
+        let candidates = (paths + ["/opt/homebrew/bin", "/usr/local/bin",
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin").path])
+            .map { URL(fileURLWithPath: $0).appendingPathComponent("codex") }
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
+    }
+    static var isInstalled: Bool { executable != nil }
+
+    static func normaliseResponse(_ response: [String: Any]) -> [String: Any]? {
+        let limits: [String: Any]
+        if let buckets = response["rateLimitsByLimitId"] as? [String: Any] {
+            // A model-specific bucket must not masquerade as the overall Codex allowance.
+            guard let codex = buckets["codex"] as? [String: Any] else { return [:] }
+            limits = codex
+        } else if let legacy = response["rateLimits"] as? [String: Any] {
+            limits = legacy
+        } else { return nil }
+        var out: [String: Any] = [:]
+        for name in ["primary", "secondary"] {
+            guard let w = limits[name] as? [String: Any],
+                  let used = w["usedPercent"] as? NSNumber,
+                  let minutes = w["windowDurationMins"] as? NSNumber,
+                  used.doubleValue.isFinite else { continue }
+            // Do not invent a 5-hour window when the account only reports a weekly limit.
+            let key: String
+            switch minutes.doubleValue {
+            case 300: key = "five_hour"
+            case 10080: key = "seven_day"
+            default: continue
+            }
+            var value: [String: Any] = ["utilization": max(0, min(100, used.doubleValue))]
+            if let reset = w["resetsAt"] as? NSNumber, reset.doubleValue.isFinite {
+                value["resets_at"] = ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: reset.doubleValue))
+            }
+            out[key] = value
+        }
+        return out
+    }
+
+    /// One short-lived stdio connection per refresh. poll bounds both handshake and RPC reads.
+    static func read(timeout: TimeInterval = 20) -> Result? {
+        guard let binary = executable else { orbLog("codex: CLI not found"); return nil }
+        let process = Process(), input = Pipe(), output = Pipe()
+        process.executableURL = binary
+        process.arguments = ["app-server"]
+        process.standardInput = input
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { orbLog("codex: app-server could not start"); return nil }
+        defer {
+            try? input.fileHandleForWriting.close()
+            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+            process.waitUntilExit()
+            try? output.fileHandleForReading.close()
+        }
+        let deadline = Date().addingTimeInterval(timeout)
+        var buffer = Data()
+        func send(_ message: [String: Any]) throws {
+            var data = try JSONSerialization.data(withJSONObject: message)
+            data.append(10)
+            try input.fileHandleForWriting.write(contentsOf: data)
+        }
+        func receive(id: Int) -> [String: Any]? {
+            while Date() < deadline {
+                while let end = buffer.firstIndex(of: 10) {
+                    let line = buffer.prefix(upTo: end)
+                    let obj = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any]
+                    buffer.removeSubrange(...end)
+                    if let obj = obj, (obj["id"] as? Int) == id { return obj }
+                }
+                var descriptor = pollfd(fd: output.fileHandleForReading.fileDescriptor, events: Int16(POLLIN), revents: 0)
+                let remaining = Int32(max(1, deadline.timeIntervalSinceNow * 1000))
+                let ready = poll(&descriptor, 1, remaining)
+                if ready < 0 && errno == EINTR { continue }
+                guard ready > 0 else { return nil }
+                let chunk = output.fileHandleForReading.availableData
+                guard !chunk.isEmpty else { return nil }
+                buffer.append(chunk)
+                guard buffer.count < 4 * 1024 * 1024 else { return nil }
+            }
+            return nil
+        }
+        do {
+            try send(["id": 0, "method": "initialize", "params": ["clientInfo": [
+                "name": "claude_usage_orb", "title": "Claude Usage Orb", "version": "1.0"]]])
+            guard let hello = receive(id: 0), hello["result"] != nil else {
+                orbLog("codex: app-server initialization failed or timed out"); return nil
+            }
+            try send(["method": "initialized", "params": [:]])
+            try send(["id": 1, "method": "account/rateLimits/read"])
+            guard let reply = receive(id: 1), let result = reply["result"] as? [String: Any],
+                  let data = normaliseResponse(result) else {
+                orbLog("codex: rate limits unavailable; check codex login status"); return nil
+            }
+            return Result(data: data, stale: false, source: "Codex app-server")
+        } catch { orbLog("codex: app-server connection closed"); return nil }
+    }
+
+    static func fetch(_ done: @escaping (Result?) -> Void) {
+        DispatchQueue.global(qos: .utility).async {
+            let result = read()
+            DispatchQueue.main.async { done(result) }
+        }
+    }
+}
+
 // MARK: - Chat activity tracking
 
 let kTasksKey = "ClaudeUsageOrbTasks"
@@ -678,16 +841,31 @@ struct OrbTask: Codable {
     var startedAt: Double      // ms since 1970
     var endedAt: Double?
     var idleSeen: Int
-    var kind: String?          // chat | code-cloud | code-local
+    var kind: String?          // chat | code-cloud | code-local | codex-local | codex-desktop
     var cwd: String?
+    /// Sessions tracked through a local hook file rather than claude.ai.
+    var isLocal: Bool { kind == "code-local" || kind == "codex-local" }
 }
 
-/// Terminal Claude Code sessions, written by hooks/claude-monitor-hook.py.
+/// Terminal sessions written by hooks/claude-monitor-hook.py — Claude Code into
+/// `code-sessions/`, Codex CLI into `codex-sessions/`. Same file format, different `kind`.
 enum LocalCodeSessions {
-    static var dir: URL {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/ClaudeMonitor/code-sessions")
+    static var support: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/ClaudeMonitor")
+    }
+    static let folders: [(dir: String, kind: String, title: String)] = [
+        ("code-sessions", "code-local", "Claude Code"),
+        ("codex-sessions", "codex-local", "Codex"),
+    ]
+    static func dir(for kind: String) -> URL {
+        support.appendingPathComponent(folders.first(where: { $0.kind == kind })?.dir ?? "code-sessions")
     }
     static func read() -> [[String: Any]] {
+        var out: [[String: Any]] = []
+        for f in folders { out += read(dir: support.appendingPathComponent(f.dir), kind: f.kind, fallbackTitle: f.title) }
+        return out
+    }
+    private static func read(dir: URL, kind: String, fallbackTitle: String) -> [[String: Any]] {
         guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { return [] }
         var out: [[String: Any]] = []
         let now = Date().timeIntervalSince1970 * 1000
@@ -702,7 +880,7 @@ enum LocalCodeSessions {
             }
             if state.isEmpty { continue }
             if state != "done" && now - updated > 6 * 3600_000 { state = "done"; o["endedAt"] = updated }
-            out.append(["id": id, "kind": "code-local", "title": (o["title"] as? String) ?? "Claude Code",
+            out.append(["id": id, "kind": kind, "title": (o["title"] as? String) ?? fallbackTitle,
                         "live": state, "req": state == "permission" ? 1 : 0,
                         "startedMs": (o["startedAt"] as? NSNumber)?.doubleValue ?? updated,
                         "settledMs": (o["endedAt"] as? NSNumber)?.doubleValue ?? 0,
@@ -710,8 +888,166 @@ enum LocalCodeSessions {
         }
         return out
     }
-    static func remove(_ id: String) {
-        try? FileManager.default.removeItem(at: dir.appendingPathComponent(id + ".json"))
+    static func remove(_ id: String, kind: String?) {
+        try? FileManager.default.removeItem(at: dir(for: kind ?? "code-local").appendingPathComponent(id + ".json"))
+    }
+}
+
+// MARK: - Codex desktop activity (read-only local records)
+
+final class CodexDesktopSessions {
+    struct Activity {
+        var state = ""
+        var turnID = ""
+        var started: Double = 0
+        var ended: Double = 0
+        mutating func apply(_ record: [String: Any]) {
+            guard record["type"] as? String == "event_msg",
+                  let event = record["payload"] as? [String: Any],
+                  let type = event["type"] as? String else { return }
+            let timestamp = CodexDesktopSessions.milliseconds(record["timestamp"])
+            let turn = event["turn_id"] as? String ?? ""
+            switch type {
+            case "task_started":
+                if !turn.isEmpty && turn == turnID { return }
+                turnID = turn
+                state = "running"
+                started = CodexDesktopSessions.milliseconds(event["started_at"]) ?? timestamp ?? 0
+                ended = 0
+            case "task_complete", "turn_aborted":
+                guard turnID.isEmpty || turn.isEmpty || turnID == turn else { return }
+                state = "done"
+                ended = CodexDesktopSessions.milliseconds(event["completed_at"]) ?? timestamp ?? 0
+            default: break
+            }
+        }
+    }
+    struct Cursor {
+        var offset: UInt64 = 0
+        var pending = Data()
+        var activity = Activity()
+        var fileID: UInt64 = 0
+    }
+    private var cursors: [String: Cursor] = [:]
+    let home: URL
+    let hooks: URL
+    init(home: URL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["CODEX_HOME"] ??
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex").path),
+         hooks: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/ClaudeMonitor/codex-sessions")) {
+        self.home = home
+        self.hooks = hooks
+    }
+    static func displayState(activity: Activity, hook: [String: Any]?) -> String {
+        // Completion from the transcript wins; old turns must never add an Allow button.
+        guard activity.state == "running", !activity.turnID.isEmpty,
+              let hook = hook, hook["turnId"] as? String == activity.turnID,
+              let updated = hook["updatedAt"] as? NSNumber, updated.doubleValue >= activity.started,
+              hook["state"] as? String == "permission",
+              let pending = hook["pendingApprovals"] as? [String: Any], !pending.isEmpty else { return activity.state }
+        return "permission"
+    }
+    /// Only user-facing conversations may create cards. Background suggestion jobs may
+    /// emit identical hooks but have no interactive thread entry in Codex's index.
+    func foregroundIDs() -> Set<String>? {
+        guard let files = try? FileManager.default.contentsOfDirectory(at: home, includingPropertiesForKeys: nil),
+              let database = files.filter({ $0.lastPathComponent.hasPrefix("state_") && $0.pathExtension == "sqlite" })
+                .sorted(by: { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedDescending }).first else { return nil }
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(database.path, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK else {
+            if let db = db { sqlite3_close(db) }; return nil
+        }
+        defer { sqlite3_close(db) }
+        sqlite3_busy_timeout(db, 100)
+        var query: OpaquePointer?
+        let sql = "SELECT id FROM threads WHERE archived=0 AND source IN ('cli','vscode','appServer') AND (thread_source IS NULL OR thread_source IN ('user','agent_created_thread'))"
+        guard sqlite3_prepare_v2(db, sql, -1, &query, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(query) }
+        var ids = Set<String>()
+        var status = sqlite3_step(query)
+        while status == SQLITE_ROW {
+            if let value = sqlite3_column_text(query, 0) { ids.insert(String(cString: value)) }
+            status = sqlite3_step(query)
+        }
+        return status == SQLITE_DONE ? ids : nil
+    }
+    static func milliseconds(_ value: Any?) -> Double? {
+        if let n = value as? NSNumber { return n.doubleValue > 1e12 ? n.doubleValue : n.doubleValue * 1000 }
+        guard let text = value as? String else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let date = formatter.date(from: text) ?? ISO8601DateFormatter().date(from: text)
+        return date.map { $0.timeIntervalSince1970 * 1000 }
+    }
+    /// Cache byte offsets so repeated polls read only appended data, including split JSON lines.
+    func activity(at path: String) -> Activity? {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+              let size = attrs[.size] as? NSNumber,
+              let file = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else { return nil }
+        defer { try? file.close() }
+        let identity = (attrs[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0
+        var cursor = cursors[path] ?? Cursor()
+        if cursor.offset > size.uint64Value || cursor.fileID != identity { cursor = Cursor() }
+        cursor.fileID = identity
+        do {
+            try file.seek(toOffset: cursor.offset)
+            // Bound work per poll; large histories are caught up incrementally off the UI thread.
+            let limit = min(size.uint64Value, cursor.offset + 32 * 1024 * 1024)
+            while cursor.offset < limit {
+                guard let chunk = try file.read(upToCount: Int(min(262144, limit - cursor.offset))), !chunk.isEmpty else { break }
+                cursor.offset += UInt64(chunk.count)
+                cursor.pending.append(chunk)
+                while let end = cursor.pending.firstIndex(of: 10) {
+                    let line = cursor.pending.prefix(upTo: end)
+                    if let record = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any] {
+                        cursor.activity.apply(record)
+                    }
+                    cursor.pending.removeSubrange(...end)
+                }
+            }
+            cursors[path] = cursor
+            // Never display an old start while we are still catching up to a later completion.
+            return cursor.offset >= size.uint64Value ? cursor.activity : nil
+        } catch { return nil }
+    }
+    func read(tracked: Set<String>, now: Date = Date()) -> [[String: Any]] {
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: home, includingPropertiesForKeys: nil),
+              let database = files.filter({ $0.lastPathComponent.hasPrefix("state_") && $0.pathExtension == "sqlite" })
+                .sorted(by: { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedDescending }).first else { return [] }
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(database.path, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK else {
+            if let db = db { sqlite3_close(db) }; return []
+        }
+        defer { sqlite3_close(db) }
+        sqlite3_busy_timeout(db, 100)
+        var statement: OpaquePointer?
+        // Desktop currently persists source=vscode, originator=Codex Desktop. Exclude subagents and CLI.
+        let sql = "SELECT id, COALESCE(name, title), rollout_path, cwd, updated_at FROM threads WHERE archived=0 AND originator='Codex Desktop' AND source IN ('vscode','appServer') AND (thread_source IS NULL OR thread_source IN ('user','agent_created_thread')) ORDER BY updated_at DESC"
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(statement) }
+        func text(_ column: Int32) -> String {
+            sqlite3_column_text(statement, column).map { String(cString: $0) } ?? ""
+        }
+        var result: [[String: Any]] = []
+        var retained = Set<String>()
+        while sqlite3_step(statement) == SQLITE_ROW {
+            let id = text(0), path = text(2)
+            guard UUID(uuidString: id) != nil else { continue }
+            let updated = sqlite3_column_double(statement, 4)
+            guard tracked.contains(id) || now.timeIntervalSince1970 - updated < 2 * 86400 else { continue }
+            retained.insert(path)
+            guard let activity = activity(at: path), !activity.state.isEmpty else { continue }
+            // Ignore abandoned old starts on first discovery; don't fabricate a completion event.
+            if activity.state == "running" && !tracked.contains(id) && now.timeIntervalSince1970 - updated > 6 * 3600 { continue }
+            let hookData = try? Data(contentsOf: hooks.appendingPathComponent(id + ".json"))
+            let hook = hookData.flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }
+            let state = Self.displayState(activity: activity, hook: hook?["id"] as? String == id ? hook : nil)
+            result.append(["id": id, "kind": "codex-desktop", "title": text(1), "cwd": text(3),
+                "live": state, "req": state == "permission" ? 1 : 0, "startedMs": activity.started, "settledMs": activity.ended,
+                "url": "codex://threads/" + id])
+        }
+        cursors = cursors.filter { retained.contains($0.key) }
+        return result
     }
 }
 
@@ -719,7 +1055,7 @@ enum LocalCodeSessions {
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var orb: OrbWindowController!
-    let web = ClaudeSession()
+    let web = WebSession(site: .claude)
     var statusItem: NSStatusItem!
     var timer: Timer?
     var refreshing = false
@@ -731,6 +1067,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var tasks: [OrbTask] = []
     var taskTimer: Timer?
     var polling = false
+    var localPolling = false
+    let desktopSessions = CodexDesktopSessions()
+
+    // Codex (right half of the orb). `codexPayload` is what the page gets under `codex`:
+    // a dict when Codex is shown, NSNull when it is off or not installed.
+    var codexPayload: Any = NSNull()
+    var lastCodexSession: Double?
+    var lastCodexWeek: Double?
+    var codexSource = ""
+    var codexFetching = false
+    var lastClaudePayload: [String: Any]?
+    var codexLoginProcess: Process?
+    var codexWanted: Bool { orb.style == "dual" }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMainMenu()
@@ -756,6 +1105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         m.delegate = self
         statusItem.menu = m
 
+        pushUsage()
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: refreshEvery, repeats: true) { [weak self] _ in self?.refresh() }
         loadTasks()
@@ -777,6 +1127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: data
 
     @objc func refresh() {
+        refreshCodex()
         if refreshing || web.isLoginOpen { return }
         refreshing = true
         web.fetch { [weak self] outcome in
@@ -792,27 +1143,71 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     self.refreshing = false
                     if let d = d { self.deliver(d, source: "Claude Code"); return }
                     if needLogin {
-                        self.orb.send(["status": "login"])
+                        self.sendUsage(["status": "login"])
                         if !self.promptedLogin { self.promptedLogin = true; self.openLogin() }
                     } else {
-                        self.orb.send(["status": "error"])
+                        self.sendUsage(["status": "error"])
                     }
                 }
             }
         }
     }
 
-    func deliver(_ d: [String: Any], source: String) {
-        func win(_ key: String) -> Any {
-            guard let w = d[key] as? [String: Any] else { return NSNull() }
-            return ["pct": w["utilization"] ?? NSNull(), "resetsAt": w["resets_at"] ?? NSNull()]
+    /// Codex runs on its own, in parallel with the claude.ai read; whichever finishes later re-sends the combined payload.
+    func refreshCodex() {
+        guard codexWanted else {
+            if !(codexPayload is NSNull) { codexPayload = NSNull(); lastCodexSession = nil; lastCodexWeek = nil; pushUsage() }
+            return
         }
-        func pct(_ key: String) -> Double? { ((d[key] as? [String: Any])?["utilization"] as? NSNumber)?.doubleValue }
-        lastSession = pct("five_hour") ?? 0
-        lastWeek = pct("seven_day") ?? 0
+        guard !codexFetching else { return }
+        codexFetching = true
+        CodexUsage.fetch { [weak self] r in self?.gotCodex(r) }
+    }
+
+    func gotCodex(_ r: CodexUsage.Result?) {
+        self.codexFetching = false
+        guard codexWanted else { return }
+        guard let r = r else {
+            // A failed refresh is unavailable, not zero or a historical percentage.
+            self.codexPayload = ["session": NSNull(), "week": NSNull(), "stale": true]
+            self.lastCodexSession = nil
+            self.lastCodexWeek = nil
+            self.codexSource = "Unavailable — sign in with Codex or retry"
+            self.pushUsage()
+            return
+        }
+        self.codexPayload = ["session": Self.win(r.data, "five_hour"), "week": Self.win(r.data, "seven_day"), "stale": r.stale]
+        self.lastCodexSession = Self.pct(r.data, "five_hour")
+        self.lastCodexWeek = Self.pct(r.data, "seven_day")
+        self.codexSource = r.source
+        orbLog("codex ok (\(r.source)): five_hour=\(self.lastCodexSession ?? -1) seven_day=\(self.lastCodexWeek ?? -1)")
+        self.pushUsage()
+    }
+
+    static func win(_ d: [String: Any], _ key: String) -> Any {
+        guard let w = d[key] as? [String: Any] else { return NSNull() }
+        return ["pct": w["utilization"] ?? NSNull(), "resetsAt": w["resets_at"] ?? NSNull()]
+    }
+    static func pct(_ d: [String: Any], _ key: String) -> Double? { ((d[key] as? [String: Any])?["utilization"] as? NSNumber)?.doubleValue }
+
+    func deliver(_ d: [String: Any], source: String) {
+        lastSession = Self.pct(d, "five_hour") ?? 0
+        lastWeek = Self.pct(d, "seven_day") ?? 0
         self.source = source
         lastOK = Date()
-        orb.send(["status": "ok", "session": win("five_hour"), "week": win("seven_day")])
+        sendUsage(["status": "ok", "session": Self.win(d, "five_hour"), "week": Self.win(d, "seven_day")])
+    }
+
+    /// Sends the Claude payload plus whatever Codex state we have, and sizes the window for it.
+    func sendUsage(_ claude: [String: Any]) {
+        lastClaudePayload = claude
+        pushUsage()
+    }
+    func pushUsage() {
+        var p = lastClaudePayload ?? ["status": "loading"]
+        p["codex"] = codexWanted ? codexPayload : NSNull()
+        orb.setQuad(codexWanted)
+        orb.send(p)
     }
 
     // MARK: chat activity
@@ -820,6 +1215,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func loadTasks() {
         if let d = UserDefaults.standard.data(forKey: kTasksKey),
            let t = try? JSONDecoder().decode([OrbTask].self, from: d) { tasks = t }
+        if let ids = desktopSessions.foregroundIDs() { removeBackgroundCards(foregroundIDs: ids) }
+    }
+    func removeBackgroundCards(foregroundIDs: Set<String>) {
+        let count = tasks.count
+        tasks.removeAll { ($0.kind == "codex-local" || $0.kind == "codex-desktop") && !foregroundIDs.contains($0.id) }
+        if tasks.count != count { saveTasks(); pushTasks() }
     }
     func saveTasks() {
         if let d = try? JSONEncoder().encode(tasks) { UserDefaults.standard.set(d, forKey: kTasksKey) }
@@ -833,13 +1234,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func pollTasks() {
-        if polling || web.isLoginOpen || lastOK == nil { return }
+        // Local sessions must continue polling even when Claude is signed out or offline.
+        if !localPolling {
+            localPolling = true
+            let tracked = Set(tasks.filter { $0.kind == "codex-desktop" }.map { $0.id })
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                guard let self = self else { return }
+                let foreground = self.desktopSessions.foregroundIDs()
+                let desktop = self.desktopSessions.read(tracked: tracked).filter {
+                    foreground?.contains($0["id"] as? String ?? "") == true
+                }
+                let desktopIDs = Set(desktop.compactMap { $0["id"] as? String })
+                let local = LocalCodeSessions.read().filter {
+                    let id = $0["id"] as? String ?? ""
+                    return !desktopIDs.contains(id) && ($0["kind"] as? String != "codex-local" || foreground?.contains(id) == true)
+                }
+                DispatchQueue.main.async {
+                    self.localPolling = false
+                    if let foreground = foreground { self.removeBackgroundCards(foregroundIDs: foreground) }
+                    self.ingest(desktop + local)
+                }
+            }
+        }
+        guard !polling, !web.isLoginOpen, lastOK != nil else { return }
         polling = true
-        let tracked = tasks.filter { $0.state != "done" }.map { $0.id }
+        let tracked = tasks.filter { !$0.isLocal && $0.kind != "codex-desktop" && $0.state != "done" }.map { $0.id }
         web.fetchSessions(tracked: tracked) { [weak self] list in
             guard let self = self else { return }
             self.polling = false
-            self.ingest((list ?? []) + LocalCodeSessions.read())
+            self.ingest(list ?? [])
         }
     }
 
@@ -862,14 +1285,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if let i = tasks.firstIndex(where: { $0.id == id }) {
                 var t = tasks[i]
                 let before = (t.state, t.title, t.bucket)
+                let previousStart = t.startedAt
                 if busy {
                     if t.state == "done" { t.startedAt = startedMs > 0 ? startedMs : now; t.endedAt = nil }
-                    else if startedMs > 0 && abs(startedMs - t.startedAt) > 60_000 { t.startedAt = startedMs }
+                    else if startedMs > 0 && (kind == "codex-desktop" ? startedMs != t.startedAt : abs(startedMs - t.startedAt) > 60_000) { t.startedAt = startedMs }
                     t.state = perm ? "permission" : "running"
                     t.idleSeen = 0
                 } else if t.state != "done" {
                     t.idleSeen += 1
-                    if t.idleSeen >= 2 || kind == "code-local" {
+                    if t.idleSeen >= 2 || kind == "code-local" || kind == "codex-local" || kind == "codex-desktop" {
                         t.state = "done"
                         t.endedAt = settledMs > t.startedAt ? settledMs : now
                     }
@@ -879,7 +1303,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 t.kind = kind
                 if let c = cwd { t.cwd = c }
                 if !url.isEmpty { t.url = url }
-                if before != (t.state, t.title, t.bucket) { changed = true; orbLog("chat '\(title)' → \(t.state) (\(live))") }
+                if before != (t.state, t.title, t.bucket) || previousStart != t.startedAt { changed = true; orbLog("chat '\(title)' → \(t.state) (\(live))") }
                 tasks[i] = t
             } else if busy {
                 tasks.append(OrbTask(id: id, title: title, url: url, state: perm ? "permission" : "running",
@@ -893,48 +1317,73 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func cardAction(id: String, action: String) {
-        guard let i = tasks.firstIndex(where: { $0.id == id }) else { return }
-        let t = tasks[i]
-        openChat(t)
-        if action == "check" {
-            if t.kind == "code-local" { LocalCodeSessions.remove(t.id) }
-            tasks.remove(at: i)
-            saveTasks()
-            pushTasks()
+        guard let t = tasks.first(where: { $0.id == id }) else { return }
+        orbLog("card click kind=\(t.kind ?? "chat") action=\(action) id=\(id)")
+        openChat(t) { [weak self] opened in
+            guard let self = self else { return }
+            guard opened else {
+                orbLog("card navigation failed; retaining card \(id)")
+                let alert = NSAlert()
+                alert.messageText = "Could not open the chat"
+                alert.informativeText = "The task card has been kept. Open the app and try again."
+                alert.runModal()
+                return
+            }
+            // Opening is asynchronous: don't remove a task that started another turn meanwhile.
+            if action == "check", let index = self.tasks.firstIndex(where: { $0.id == id }),
+               self.tasks[index].state == "done", self.tasks[index].startedAt == t.startedAt {
+                if t.isLocal { LocalCodeSessions.remove(t.id, kind: t.kind) }
+                self.tasks.remove(at: index)
+                self.saveTasks()
+                self.pushTasks()
+            }
         }
     }
 
-    func openChat(_ t: OrbTask) {
-        if t.kind == "code-local" {
-            // A terminal session: bring the terminal forward (the one that was frontmost most recently).
-            let ws = NSWorkspace.shared
-            let terminals = ["com.googlecode.iterm2", "com.apple.Terminal", "dev.warp.Warp-Stable", "com.mitchellh.ghostty", "net.kovidgoyal.kitty", "com.microsoft.VSCode", "com.todesktop.230313mzl4w4u92"]
-            if let app = ws.runningApplications.first(where: { terminals.contains($0.bundleIdentifier ?? "") }) {
-                app.activate(options: [])
-                orbLog("activated \(app.bundleIdentifier ?? "") for local code session")
+    func openChat(_ t: OrbTask, completion: @escaping (Bool) -> Void) {
+        let ws = NSWorkspace.shared
+        if t.kind == "codex-desktop" {
+            guard UUID(uuidString: t.id) != nil,
+                  let url = URL(string: "codex://threads/" + t.id + "?hostId=local"),
+                  let application = ws.urlForApplication(withBundleIdentifier: "com.openai.codex") else {
+                completion(false); return
+            }
+            // The current desktop app may be named ChatGPT. Resolve by bundle ID, not display name.
+            let config = NSWorkspace.OpenConfiguration()
+            config.activates = true
+            ws.open([url], withApplicationAt: application, configuration: config) { app, error in
+                DispatchQueue.main.async {
+                    let opened = app != nil && error == nil
+                    if opened { app?.activate(options: []) }
+                    orbLog("Codex navigation delivery=\(opened) thread=\(t.id) error=\(error?.localizedDescription ?? "none")")
+                    completion(opened)
+                }
             }
             return
         }
+        if t.isLocal {
+            let terminals = ["com.googlecode.iterm2", "com.apple.Terminal", "dev.warp.Warp-Stable", "com.mitchellh.ghostty", "net.kovidgoyal.kitty", "com.microsoft.VSCode", "com.todesktop.230313mzl4w4u92"]
+            if let app = ws.runningApplications.first(where: { terminals.contains($0.bundleIdentifier ?? "") }) {
+                completion(app.activate(options: []))
+            } else { completion(false) }
+            return
+        }
         let path = t.url.isEmpty ? "/chat/" + t.id : t.url
-        let ws = NSWorkspace.shared
-        // Prefer the desktop app: try its URL scheme first, then just bring the app forward.
-        if let deep = URL(string: "claude://claude.ai" + path), ws.urlForApplication(toOpen: deep) != nil {
-            orbLog("open chat via \(deep.absoluteString)")
-            ws.open(deep)
+        if let deep = URL(string: "claude://claude.ai" + path), ws.urlForApplication(toOpen: deep) != nil,
+           ws.open(deep) { completion(true); return }
+        if let application = ws.urlForApplication(withBundleIdentifier: "com.anthropic.claudefordesktop") {
+            let config = NSWorkspace.OpenConfiguration()
+            config.activates = true
+            ws.openApplication(at: application, configuration: config) { app, error in
+                DispatchQueue.main.async { completion(app != nil && error == nil) }
+            }
             return
         }
-        if let app = ws.urlForApplication(withBundleIdentifier: "com.anthropic.claudefordesktop") {
-            orbLog("open Claude app (no deep link) for \(path)")
-            let cfg = NSWorkspace.OpenConfiguration()
-            cfg.activates = true
-            ws.openApplication(at: app, configuration: cfg, completionHandler: nil)
-            return
-        }
-        if let web = URL(string: "https://claude.ai" + path) { ws.open(web) }
+        completion(URL(string: "https://claude.ai" + path).map { ws.open($0) } ?? false)
     }
 
     @objc func clearFinished() {
-        for t in tasks where t.state == "done" && t.kind == "code-local" { LocalCodeSessions.remove(t.id) }
+        for t in tasks where t.state == "done" && t.isLocal { LocalCodeSessions.remove(t.id, kind: t.kind) }
         tasks.removeAll { $0.state == "done" }
         saveTasks()
         pushTasks()
@@ -945,6 +1394,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func openLogin() { web.showLogin() }
+    @objc func openGPTLogin() {
+        guard codexLoginProcess == nil, let binary = CodexUsage.executable else { return }
+        let process = Process()
+        process.executableURL = binary
+        process.arguments = ["login"]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        process.terminationHandler = { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.codexLoginProcess = nil
+                self?.refreshCodex()
+            }
+        }
+        do { try process.run(); codexLoginProcess = process }
+        catch { orbLog("codex login could not start") }
+    }
 
     // MARK: menus
 
@@ -958,8 +1423,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func makeMenu() -> NSMenu {
         let m = NSMenu()
-        let fmt: (Double?) -> String = { v in v.map { String(format: "%.0f%%", $0) } ?? "--" }
-        let info = NSMenuItem(title: "Session \(fmt(lastSession))   ·   Week \(fmt(lastWeek))", action: nil, keyEquivalent: "")
+        let fmt: (Double?) -> String = { v in v.map { String(format: "%.0f%%", $0) } ?? "N/A" }
+        let showingCodex = codexWanted
+        let info = NSMenuItem(title: (showingCodex ? "Claude   " : "") + "Session \(fmt(lastSession))   ·   Week \(fmt(lastWeek))", action: nil, keyEquivalent: "")
         info.isEnabled = false
         m.addItem(info)
         if let t = lastOK {
@@ -967,6 +1433,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let src = NSMenuItem(title: "Source: \(source) · updated \(df.string(from: t))", action: nil, keyEquivalent: "")
             src.isEnabled = false
             m.addItem(src)
+        }
+        if showingCodex {
+            let stale = ((codexPayload as? [String: Any])?["stale"] as? Bool) ?? false
+            let ci = NSMenuItem(title: "Codex   Session \(fmt(lastCodexSession))   ·   Week \(fmt(lastCodexWeek))" + (stale ? "   (stale)" : ""), action: nil, keyEquivalent: "")
+            ci.isEnabled = false
+            m.addItem(ci)
+            if !codexSource.isEmpty {
+                let cs = NSMenuItem(title: "Source: \(codexSource)" + (stale ? " · run `codex login` if this persists" : ""), action: nil, keyEquivalent: "")
+                cs.isEnabled = false
+                m.addItem(cs)
+            }
         }
         m.addItem(.separator())
         add(m, "Refresh now", #selector(refresh), "r")
@@ -991,7 +1468,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         m.addItem(sizeItem)
         let styleItem = NSMenuItem(title: "Style", action: nil, keyEquivalent: "")
         let stm = NSMenu()
-        for (title, key) in [("Classic orb", "classic"), ("Witch's cauldron 🎃", "witch")] {
+        for (title, key) in [("Classic orb — Claude only", "classic"), ("Witch's cauldron 🎃 — Claude only", "witch"), ("Claude + Codex", "dual")] {
             let it = NSMenuItem(title: title, action: #selector(pickStyle(_:)), keyEquivalent: "")
             it.target = self
             it.representedObject = key
@@ -1004,6 +1481,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if tasks.contains(where: { $0.state == "done" }) { add(m, "Clear finished chats", #selector(clearFinished)) }
         m.addItem(.separator())
         add(m, lastOK == nil ? "Sign in to claude.ai…" : "Sign in again…", #selector(openLogin))
+        add(m, "Sign in with Codex…", #selector(openGPTLogin)).isEnabled = CodexUsage.isInstalled
         let la = add(m, "Launch at login", #selector(toggleLaunchAtLogin))
         la.state = FileManager.default.fileExists(atPath: launchAgentURL.path) ? .on : .off
         m.addItem(.separator())
@@ -1036,6 +1514,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func pickStyle(_ sender: NSMenuItem) {
         guard let key = sender.representedObject as? String else { return }
         orb.setStyle(key)
+        pushUsage()
+        refreshCodex()
         updateStatusIcon()
     }
     func updateStatusIcon() {
