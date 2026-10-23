@@ -20,6 +20,7 @@ The orb floats above every app and every desktop, including full-screen apps. Dr
 - **Freely resizable** — scroll wheel or trackpad pinch on the orb, or pick a preset from the menu.
 - **Menu bar icon** — refresh, hide/show, size, sign in again, launch at login, quit.
 - **Remembers everything** — position, size, and unchecked cards survive restarts.
+- **Two styles** — the classic neon orb, or **Witch's cauldron**: a pastel, crayon-textured cauldron whose belly is the gauge (left: session, right: week), with a little witch hamster stirring it. Her mood follows your usage (content → scheming → panicking, with the potion boiling over above 88%); she naps while signed out and looks at you on hover. Pick it from the menu: **Style → Witch's cauldron**.
 
 ## Get it for your platform
 
@@ -30,6 +31,8 @@ The orb floats above every app and every desktop, including full-screen apps. Dr
 | Windows | In testing.<br>Monitors Chats, Cowork tasks, and Claude Code (cloud + terminal). | [`windows/`](windows/) |
 
 All versions share the same orb (`orb.html`) and the same features; only the native shell differs.
+
+<p align="center"><img src="docs/witch-style.png" width="240" alt="Witch's cauldron style"></p>
 
 ## Project layout
 
@@ -50,4 +53,4 @@ Terminal Claude Code sessions never touch the server, so they are tracked locall
 
 ## License
 
-MIT
+MIT. The Witch's cauldron style embeds two fonts under the SIL Open Font License 1.1: [Gaegu](https://fonts.google.com/specimen/Gaegu) (JIKJI SOFT) and [Sniglet](https://fonts.google.com/specimen/Sniglet) (Haley Fiege).

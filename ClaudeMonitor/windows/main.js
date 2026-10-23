@@ -25,7 +25,7 @@ function log(s) {
   try { fs.appendFileSync(logFile(), `${new Date().toISOString()} ${s}\n`); } catch (e) {}
 }
 
-let state = { scale: 1, hidden: false, x: null, y: null, tasks: [], notify: true };
+let state = { scale: 1, hidden: false, x: null, y: null, tasks: [], notify: true, style: 'classic' };
 function loadState() {
   try { Object.assign(state, JSON.parse(fs.readFileSync(stateFile(), 'utf8'))); } catch (e) {}
   state.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Number(state.scale) || 1));
@@ -69,6 +69,7 @@ function createOrb() {
   orb.webContents.on('did-finish-load', () => {
     pageLoaded = true;
     orb.webContents.setZoomFactor(state.scale);
+    js(`window.orbStyle && window.orbStyle(${JSON.stringify(state.style || 'classic')})`);
     js(`window.orbZoom && window.orbZoom(${state.scale})`);
     if (lastPayload) js(`window.orbUpdate && window.orbUpdate(${JSON.stringify(lastPayload)})`);
     pushTasks();
@@ -520,6 +521,10 @@ function buildMenu() {
       ...[['Small', 0.8], ['Medium', 1], ['Large', 1.25], ['Extra large', 1.5], ['Huge', 2]].map(([label, s]) => ({ label, type: 'radio', checked: Math.abs(state.scale - s) < 0.01, click: () => setScale(s) }))
     ]
   });
+  items.push({
+    label: 'Style', submenu: [['Classic orb', 'classic'], ["Witch's cauldron 🎃", 'witch']].map(([label, key]) =>
+      ({ label, type: 'radio', checked: (state.style || 'classic') === key, click: () => setStyle(key) }))
+  });
   items.push({ label: 'Move to top-right corner', click: () => { placeDefault(); if (orb) orb.show(); } });
   if (state.tasks.some(t => t.state === 'done')) items.push({ label: 'Clear finished chats', click: clearFinished });
   items.push({ type: 'separator' });
@@ -529,6 +534,11 @@ function buildMenu() {
   items.push({ type: 'separator' });
   items.push({ label: 'Quit', click: () => app.quit() });
   return Menu.buildFromTemplate(items);
+}
+function setStyle(key) {
+  state.style = key === 'classic' ? 'classic' : 'witch';
+  saveState();
+  js(`window.orbStyle && window.orbStyle(${JSON.stringify(state.style)})`);
 }
 function toggleOrb() {
   if (!orb) return;
