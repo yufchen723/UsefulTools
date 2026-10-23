@@ -6,13 +6,14 @@ A small floating desktop orb that shows your Claude plan usage at a glance — a
 
 **Top to bottom:** the two pills count down to the next usage reset (current 5-hour session on the left, weekly on the right). The sphere fills with liquid as you use your quota — left half is the session, right half is the week — and shifts from green to yellow to red as it fills. Underneath, a card appears for each chat or session that is **running** (yellow, with a live timer), **waiting for your permission** (blue, with an **Allow** button that jumps to it), or **finished** (green, with a **Check** button that opens it and dismisses the card).
 
-The orb floats above every app and every desktop, including full-screen apps. Drag it anywhere, scroll or pinch to resize it, double-click to refresh.
+The orb floats above every app and every desktop, including full-screen apps. Drag it anywhere, scroll or pinch to resize it, double-click to refresh. On macOS you can also **dock** it: drag it into the top-right corner and it collapses into a slim glass capsule on the screen edge that shows your usage as fill bars and grows back into the full orb when you hover.
 
 ## Features
 
 - **Usage at a glance** — session and weekly utilization as animated liquid, with the percentage and a countdown to each reset. Same numbers as *Settings → Usage* on claude.ai, refreshed every 60 s.
 - **Codex too (macOS)** — install Codex CLI and run `codex login` (or use *Sign in with Codex…* in the menu). The orb reads Codex limits through `codex app-server`, showing N/A for missing windows.
-- **Three styles** — Classic orb, Witch's cauldron, or Claude + Codex. See [Styles](#styles) below.
+- **Seven styles** — Classic orb, Witch's cauldron, Nature, Claude + Codex, two Apple glass looks and a Witch's crystal ball. See [Styles](#styles) below.
+- **Docked mode (macOS)** — a Dynamic Island-style capsule at the top-right screen edge: one 5-hour-session fill bar per tool, orange from 80 %, red when used up. Hover to expand, move away to collapse; a chat waiting for permission pulses the capsule and shows the orb by itself for a few seconds; a finished chat leaves a green dot.
 - **Activity cards** — every chat that is running, waiting for permission, or finished-but-unchecked shows up under the orb. Checked every 6 s. Covers:
   - chats and Cowork tasks in the Claude desktop app or on the web,
   - cloud Claude Code sessions (claude.ai/code) — tagged `CODE`,
@@ -42,13 +43,19 @@ Pick one from the menu: **Style → …**. Position, size and unchecked cards ar
 
 **Claude + Codex** (macOS) — the sphere splits into four wedges: left half Claude, right half Codex; top row the 5-hour session, bottom row the week. Each wedge fills outward from the centre (area = % used) with the same green → yellow → red colouring. A fixed pair of *identity* colours — amber for Claude, ice-blue for Codex — marks the rim labels, the pills (now a 2×2 grid with `5H` / `WK` tags) and a stripe + tag on every card, so you can always tell which tool a number or a card belongs to. Codex usage comes from your signed-in Codex CLI account; local Codex desktop chats show up as `CODEX DESKTOP` cards and terminal Codex sessions as `CODEX` cards.
 
-Both extra styles were contributed by [@liranmao](https://github.com/liranmao).
+**Nature 🔬** — Claude only, styled like a figure from a Nature-journal paper: serif labels, restrained palette, thin rules.
+
+**Apple · Liquid Glass / Apple · Painted glass** (macOS) — Claude + Codex as two concentric rings in a glass disc: the outer ring is the 5-hour session, the inner ring the week; left half Claude, right half Codex, with a legend and a 2×2 grid of glass countdown pills above. *Liquid Glass* puts real system material under the shapes (NSGlassEffectView on macOS 26, the frosted sidebar/notification material before that), so the orb blurs whatever is behind it exactly like a native panel; *Painted glass* draws the same look inside the page.
+
+**Witch's crystal ball 🔮** (macOS) — the same ring layout read from a scrying ball on a brass astrolabe stand, in the cauldron's palette.
+
+The cauldron, Nature, Apple and crystal-ball styles and the docked mode were contributed by [@liranmao](https://github.com/liranmao).
 
 ## Get it for your platform
 
 | Platform | Status | Go to |
 | --- | --- | --- |
-| macOS | Stable, in daily use.<br>Monitors Chats, Cowork tasks, Claude Code (cloud + terminal) and Codex (usage + desktop + terminal). | [`macos/`](macos/) |
+| macOS | Stable, in daily use.<br>Monitors Chats, Cowork tasks, Claude Code (cloud + terminal) and Codex (usage + desktop + terminal). All seven styles and docked mode. | [`macos/`](macos/) |
 | Linux | Stable, in daily use.<br>Monitors Claude Code terminal sessions only. | [`linux/`](linux/) |
 | Windows | In testing.<br>Monitors Chats, Cowork tasks, and Claude Code (cloud + terminal). | [`windows/`](windows/) |
 
@@ -75,4 +82,4 @@ Terminal Claude Code and Codex sessions never touch the server, so they are trac
 
 ## License
 
-MIT. The Witch's cauldron style embeds two fonts under the SIL Open Font License 1.1: [Gaegu](https://fonts.google.com/specimen/Gaegu) (JIKJI SOFT) and [Sniglet](https://fonts.google.com/specimen/Sniglet) (Haley Fiege).
+MIT. The Witch's cauldron style embeds two fonts under the SIL Open Font License 1.1: [Gaegu](https://fonts.google.com/specimen/Gaegu) (JIKJI SOFT) and [Sniglet](https://fonts.google.com/specimen/Sniglet) (Haley Fiege); the Nature style embeds a Latin subset of [Source Serif 4](https://fonts.google.com/specimen/Source+Serif+4) (Adobe), also SIL OFL 1.1.

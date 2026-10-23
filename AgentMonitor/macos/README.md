@@ -9,7 +9,7 @@ Requirements: macOS 12 or newer, Xcode Command Line Tools (the installer prompts
 1. Download or clone this folder (`AgentMonitor/macos`).
 2. Double-click **`Install.command`** (if macOS refuses, right-click → Open). It compiles the app into `~/Applications/ClaudeUsageOrb.app`, turns on launch-at-login, and starts it. Takes about 20 seconds.
 3. A sign-in window opens the first time. Sign in to claude.ai once (Google sign-in works). It closes by itself and the orb starts showing your numbers.
-4. **Codex (optional).** Install Codex CLI and run `codex login`, or choose **Sign in with Codex…** from the orb menu to launch Codex’s browser sign-in. The orb reads the signed-in CLI account through `codex app-server`. Missing session/weekly windows show **N/A**. Choose *Style → Claude + Codex* to display both providers; Classic orb and Witch’s cauldron display Claude usage and task cards only.
+4. **Codex (optional).** Install Codex CLI and run `codex login`, or choose **Sign in with Codex…** from the orb menu to launch Codex’s browser sign-in. The orb reads the signed-in CLI account through `codex app-server`. Missing session/weekly windows show **N/A**. Choose *Style → Claude + Codex*, *Apple · Liquid Glass*, *Apple · Painted glass* or *Witch’s crystal ball* to display both providers; Classic orb, Witch’s cauldron and Nature display Claude usage and task cards only.
 
 To rebuild after editing the source, run `Install.command` again. Run `bash tests/run.sh` for parser regression checks, or add `--live` to verify the signed-in app-server connection.
 
@@ -23,6 +23,11 @@ To rebuild after editing the source, run `Install.command` again. Run `bash test
 | Hover over a countdown pill | Shows the exact reset time |
 | Menu → Sign in with Codex… | Launch Codex CLI’s browser sign-in |
 | Menu → Style → Claude + Codex | Show Claude and Codex in the four-wedge orb |
+| Menu → Style → Apple · Liquid Glass / Painted glass | Claude + Codex as concentric glass rings (outer = 5-hour session, inner = week; left Claude, right Codex). *Liquid Glass* uses the system material (NSGlassEffectView on macOS 26, the frosted sidebar material before that); *Painted glass* draws it in the page |
+| Menu → Style → Witch’s crystal ball 🔮 | Claude + Codex in a scrying ball with a brass astrolabe — same ring layout |
+| Menu → Style → Nature 🔬 | Claude only, in a journal-figure look |
+| Drag the orb into the top-right corner, or Menu → Dock to top-right edge (⌘D) | **Dock** it. The orb collapses into a 12 × 64 pt glass capsule on the screen edge with one fill bar per tool (5-hour session; orange from 80 %, red when used up). Hover or click the capsule and the orb grows out of it; move the pointer away and it folds back after half a second. Click anywhere else to collapse it at once. Drag the expanded orb away from the corner to undock. Remembered across launches |
+| While docked | A chat waiting for permission pulses the capsule blue and shows the orb for 4 s (turn off with *Menu → Expand by itself when a chat needs permission*); a finished chat puts a green dot on the capsule until you next open it |
 | Right-click the orb, or click the menu bar drop icon | Menu |
 | Click a card | Open that chat |
 | **⚑ Allow** (blue card) | Open the chat to grant the permission; card stays until the chat finishes |
@@ -31,7 +36,7 @@ To rebuild after editing the source, run `Install.command` again. Run `bash test
 
 ## Codex desktop tasks
 
-With *Style → Claude + Codex* selected, live local Codex desktop chats appear as blue **CODEX DESKTOP** cards, refreshed every six seconds independently of Claude sign-in. Click a card to open its Codex chat; **Check** dismisses a completed card. The monitor reads Codex’s local SQLite thread index in read-only mode and incrementally reads explicit start, completion, and interruption events from its session logs. Desktop cards exclude CLI sessions and subagents and avoid duplicate hook cards. All Codex cards must match a user-facing conversation in the local thread index; suggestion-generation jobs, internal reviews, and subagents are hidden. Previously cached background cards are removed automatically. Direct user CLI conversations remain supported. No conversation is resumed or modified.
+With a Claude + Codex style selected, live local Codex desktop chats appear as blue **CODEX DESKTOP** cards, refreshed every six seconds independently of Claude sign-in. Click a card to open its Codex chat; **Check** dismisses a completed card. The monitor reads Codex’s local SQLite thread index in read-only mode and incrementally reads explicit start, completion, and interruption events from its session logs. Desktop cards exclude CLI sessions and subagents and avoid duplicate hook cards. All Codex cards must match a user-facing conversation in the local thread index; suggestion-generation jobs, internal reviews, and subagents are hidden. Previously cached background cards are removed automatically. Direct user CLI conversations remain supported. No conversation is resumed or modified.
 
 This covers local desktop chats stored under `CODEX_HOME` (default `~/.codex`), not remote/cloud-only tasks or regular ChatGPT conversations. Approval requests are observed through Codex’s `PermissionRequest` hook and merged only into the matching desktop thread and turn. Waiting cards show **Allow**, which opens the chat for review and does not approve anything. Pending requests clear on matching `PostToolUse`, turn completion, or interruption. Since there is no approval-resolved hook, a card may stay waiting while an approved tool executes, or briefly show waiting for an automatically resolved request. A crash without a completion/interruption event can leave an observed task marked running. These local record formats are implementation details and may require updates after Codex upgrades.
 
@@ -46,7 +51,8 @@ python3 hooks/install-hooks.py --remove
 ## Source
 
 - `src/main.swift` — native floating panel, Claude web session, Codex app-server usage reader, menu bar item, and chat tracker. Codex CLI handles its own credentials; the monitor does not read tokens or historical usage logs.
-- `src/orb.html` — the orb itself, drawn on a `<canvas>`: liquid waves, bubbles, the HUD ring, countdown pills, and the activity cards.
+- `src/orb.html` — the orb itself, drawn on a `<canvas>`: liquid waves, bubbles, the HUD ring, countdown pills, and the activity cards; the Apple and crystal-ball skins are DOM/SVG and report their glass shapes to the native side so real system material can sit under them.
+- Docked mode (`DockController` in `main.swift`) is native AppKit: the capsule is its own panel, and the expand/collapse morph grows the capsule’s glass into the orb’s frame while the orb fades in, so every style keeps its own look. Honours Reduce Motion (crossfade) and exposes the capsule to VoiceOver.
 - `hooks/claude-monitor-hook.py` — the Claude Code / Codex hook; writes per-session state to `~/Library/Application Support/ClaudeMonitor/code-sessions/` (Claude) or `codex-sessions/` (with `--tool codex`).
 - `build.sh` — compiles with `swiftc`, assembles the `.app` bundle, ad-hoc signs it, writes a LaunchAgent for launch-at-login, and installs the hook.
 
