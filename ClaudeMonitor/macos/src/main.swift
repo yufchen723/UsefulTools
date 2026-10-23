@@ -8,6 +8,7 @@ import WebKit
 let kFrameName   = "ClaudeUsageOrbFrame"
 let kScaleKey    = "ClaudeUsageOrbScale"
 let kHiddenKey   = "ClaudeUsageOrbHidden"
+let kStyleKey    = "ClaudeUsageOrbStyle"     // "classic" | "witch"
 let kAgentLabel  = "com.yufan.claude-usage-orb"
 let refreshEvery: TimeInterval = 60
 let minScale: CGFloat = 0.6
@@ -103,6 +104,7 @@ final class OrbWindowController: NSObject, WKNavigationDelegate {
     private var taskCount = 0
     private var hovering = false
     private var zoomWork: DispatchWorkItem?
+    private(set) var style: String = UserDefaults.standard.string(forKey: kStyleKey) ?? "classic"
 
     init(scale: CGFloat) {
         self.scale = scale
@@ -205,6 +207,12 @@ final class OrbWindowController: NSObject, WKNavigationDelegate {
         UserDefaults.standard.set(Double(s), forKey: kScaleKey)
     }
 
+    func setStyle(_ s: String) {
+        style = s
+        UserDefaults.standard.set(s, forKey: kStyleKey)
+        js("window.orbStyle && window.orbStyle('\(s)')")
+    }
+
     func send(_ payload: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: payload),
               let s = String(data: data, encoding: .utf8) else { return }
@@ -242,6 +250,7 @@ final class OrbWindowController: NSObject, WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         pageLoaded = true
+        js("window.orbStyle && window.orbStyle('\(style)')")
         js("window.orbZoom && window.orbZoom(\(scale))")
         if let p = lastPayload { js("window.orbUpdate && window.orbUpdate(\(p))") }
         if let t = lastTasks { js("window.orbTasks && window.orbTasks(\(t))") }
@@ -742,14 +751,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !UserDefaults.standard.bool(forKey: kHiddenKey) { orb.show() }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let b = statusItem.button {
-            if let img = NSImage(systemSymbolName: "drop.halffull", accessibilityDescription: "Claude usage") {
-                img.isTemplate = true
-                b.image = img
-            } else {
-                b.title = "◐"
-            }
-        }
+        updateStatusIcon()
         let m = NSMenu()
         m.delegate = self
         statusItem.menu = m
@@ -987,6 +989,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         sizeItem.submenu = sm
         m.addItem(sizeItem)
+        let styleItem = NSMenuItem(title: "Style", action: nil, keyEquivalent: "")
+        let stm = NSMenu()
+        for (title, key) in [("Classic orb", "classic"), ("Witch's cauldron 🎃", "witch")] {
+            let it = NSMenuItem(title: title, action: #selector(pickStyle(_:)), keyEquivalent: "")
+            it.target = self
+            it.representedObject = key
+            it.state = orb.style == key ? .on : .off
+            stm.addItem(it)
+        }
+        styleItem.submenu = stm
+        m.addItem(styleItem)
         add(m, "Move to top-right corner", #selector(resetPosition))
         if tasks.contains(where: { $0.state == "done" }) { add(m, "Clear finished chats", #selector(clearFinished)) }
         m.addItem(.separator())
@@ -1019,6 +1032,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func pickSize(_ sender: NSMenuItem) {
         if let s = sender.representedObject as? Double { orb.setScale(CGFloat(s)) }
+    }
+    @objc func pickStyle(_ sender: NSMenuItem) {
+        guard let key = sender.representedObject as? String else { return }
+        orb.setStyle(key)
+        updateStatusIcon()
+    }
+    func updateStatusIcon() {
+        guard let b = statusItem?.button else { return }
+        let name = orb.style == "witch" ? "wand.and.stars" : "drop.halffull"
+        if let img = NSImage(systemSymbolName: name, accessibilityDescription: "Claude usage") {
+            img.isTemplate = true
+            b.image = img
+            b.title = ""
+        } else {
+            b.image = nil
+            b.title = orb.style == "witch" ? "✦" : "◐"
+        }
     }
     @objc func resetPosition() { orb.placeDefault(); orb.show() }
     @objc func quit() { NSApp.terminate(nil) }
