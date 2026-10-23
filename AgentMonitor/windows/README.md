@@ -1,4 +1,4 @@
-# Claude Monitor — Windows
+# Agent Monitor — Windows
 
 Electron build. See the [overview](../README.md) for what the orb shows.
 

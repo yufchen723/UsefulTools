@@ -1,19 +1,18 @@
-# Claude Monitor
+# Agent Monitor
 
-A small floating orb for macOS that shows your Claude plan usage at a glance — and, if you also use OpenAI Codex, your Codex usage next to it — plus a live card for every chat or terminal session that is working for you right now.
+A small floating desktop orb that shows your Claude plan usage at a glance — and, if you also use OpenAI Codex, your Codex usage next to it — plus a live card for every chat, task or terminal session your AI agents are working on right now.
 
-![Claude Monitor overview](docs/overview.png)
+![Agent Monitor overview](docs/overview.png)
 
-**Top to bottom:** the two pills count down to the next usage reset (current 5-hour session on the left, weekly on the right). The sphere fills with liquid as you use your quota — left half is the session, right half is the week — and shifts from green to yellow to red as it fills.
-
-**With Style → Claude + Codex selected** the sphere splits into four wedges instead: left half Claude, right half Codex; top row the 5-hour session, bottom row the week. Each wedge fills outward from the centre (area = % used) with the same green → yellow → red colouring. A fixed pair of *identity* colours — amber for Claude, ice-blue for Codex — marks the rim labels, the pills (now a 2×2 grid with `5H` / `WK` tags) and a stripe + tag on every card, so you can always tell which tool a number or a card belongs to. Underneath, a card appears for each chat that is **running** (yellow, with a live timer), **waiting for your permission** (blue, with an **Allow** button that jumps to the chat), or **finished** (green, with a **Check** button that opens the chat and dismisses the card).
+**Top to bottom:** the two pills count down to the next usage reset (current 5-hour session on the left, weekly on the right). The sphere fills with liquid as you use your quota — left half is the session, right half is the week — and shifts from green to yellow to red as it fills. Underneath, a card appears for each chat or session that is **running** (yellow, with a live timer), **waiting for your permission** (blue, with an **Allow** button that jumps to it), or **finished** (green, with a **Check** button that opens it and dismisses the card).
 
 The orb floats above every app and every desktop, including full-screen apps. Drag it anywhere, scroll or pinch to resize it, double-click to refresh.
 
 ## Features
 
 - **Usage at a glance** — session and weekly utilization as animated liquid, with the percentage and a countdown to each reset. Same numbers as *Settings → Usage* on claude.ai, refreshed every 60 s.
-- **Codex too (macOS)** — install Codex CLI and run `codex login` (or use *Sign in with Codex…* in the menu). The orb reads Codex limits through `codex app-server`, showing N/A for missing windows. Choose Classic orb or Witch’s cauldron for Claude-only usage.
+- **Codex too (macOS)** — install Codex CLI and run `codex login` (or use *Sign in with Codex…* in the menu). The orb reads Codex limits through `codex app-server`, showing N/A for missing windows.
+- **Three styles** — Classic orb, Witch's cauldron, or Claude + Codex. See [Styles](#styles) below.
 - **Activity cards** — every chat that is running, waiting for permission, or finished-but-unchecked shows up under the orb. Checked every 6 s. Covers:
   - chats and Cowork tasks in the Claude desktop app or on the web,
   - cloud Claude Code sessions (claude.ai/code) — tagged `CODE`,
@@ -25,6 +24,25 @@ The orb floats above every app and every desktop, including full-screen apps. Dr
 - **Freely resizable** — scroll wheel or trackpad pinch on the orb, or pick a preset from the menu.
 - **Menu bar icon** — refresh, hide/show, size, sign in again, launch at login, quit.
 - **Remembers everything** — position, size, and unchecked cards survive restarts.
+
+## Styles
+
+Pick one from the menu: **Style → …**. Position, size and unchecked cards are kept when you switch.
+
+<table>
+<tr>
+<td align="center" width="50%"><img src="docs/witch-style.png" width="240" alt="Witch's cauldron style"><br><b>Witch's cauldron</b></td>
+<td align="center" width="50%"><img src="docs/claude-codex-style.png" width="240" alt="Claude + Codex style"><br><b>Claude + Codex</b></td>
+</tr>
+</table>
+
+**Classic orb** (default) — the neon sphere shown at the top of this page. Left half is the current 5-hour session, right half is the week.
+
+**Witch's cauldron** — a pastel, crayon-textured cauldron whose belly is the gauge (left: session, right: week), with a little witch hamster stirring it. Her mood follows your usage: content below 55 %, scheming between 55 and 85 %, panicking above 85 %, and above 88 % the potion boils over the rim. She naps while you are signed out and looks at you on hover. Countdown pills and cards get matching styling. Claude usage only.
+
+**Claude + Codex** (macOS) — the sphere splits into four wedges: left half Claude, right half Codex; top row the 5-hour session, bottom row the week. Each wedge fills outward from the centre (area = % used) with the same green → yellow → red colouring. A fixed pair of *identity* colours — amber for Claude, ice-blue for Codex — marks the rim labels, the pills (now a 2×2 grid with `5H` / `WK` tags) and a stripe + tag on every card, so you can always tell which tool a number or a card belongs to. Codex usage comes from your signed-in Codex CLI account; local Codex desktop chats show up as `CODEX DESKTOP` cards and terminal Codex sessions as `CODEX` cards.
+
+Both extra styles were contributed by [@liranmao](https://github.com/liranmao).
 
 ## Get it for your platform
 
@@ -39,9 +57,9 @@ All versions share the same orb (`orb.html`) and the same features; only the nat
 ## Project layout
 
 ```
-ClaudeMonitor/
+AgentMonitor/
 ├── README.md          this overview
-├── docs/overview.png
+├── docs/              overview + style screenshots
 ├── macos/             native Swift app + installer
 ├── linux/             Electron app + X11 helper
 └── windows/           Electron app + Claude Code hook
@@ -57,4 +75,4 @@ Terminal Claude Code and Codex sessions never touch the server, so they are trac
 
 ## License
 
-MIT
+MIT. The Witch's cauldron style embeds two fonts under the SIL Open Font License 1.1: [Gaegu](https://fonts.google.com/specimen/Gaegu) (JIKJI SOFT) and [Sniglet](https://fonts.google.com/specimen/Sniglet) (Haley Fiege).

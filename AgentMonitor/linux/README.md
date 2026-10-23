@@ -1,4 +1,4 @@
-# Claude Monitor — Linux
+# Agent Monitor — Linux
 
 Electron build. See the [overview](../README.md) for what the orb shows.
 

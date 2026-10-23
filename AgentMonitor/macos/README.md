@@ -1,4 +1,4 @@
-# Claude Monitor — macOS
+# Agent Monitor — macOS
 
 Native Swift app. See the [overview](../README.md) for what it does.
 
@@ -6,7 +6,7 @@ Native Swift app. See the [overview](../README.md) for what it does.
 
 Requirements: macOS 12 or newer, Xcode Command Line Tools (the installer prompts for them if missing).
 
-1. Download or clone this folder (`ClaudeMonitor/macos`).
+1. Download or clone this folder (`AgentMonitor/macos`).
 2. Double-click **`Install.command`** (if macOS refuses, right-click → Open). It compiles the app into `~/Applications/ClaudeUsageOrb.app`, turns on launch-at-login, and starts it. Takes about 20 seconds.
 3. A sign-in window opens the first time. Sign in to claude.ai once (Google sign-in works). It closes by itself and the orb starts showing your numbers.
 4. **Codex (optional).** Install Codex CLI and run `codex login`, or choose **Sign in with Codex…** from the orb menu to launch Codex’s browser sign-in. The orb reads the signed-in CLI account through `codex app-server`. Missing session/weekly windows show **N/A**. Choose *Style → Claude + Codex* to display both providers; Classic orb and Witch’s cauldron display Claude usage and task cards only.
