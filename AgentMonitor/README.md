@@ -32,8 +32,10 @@ Pick one from the menu: **Style → …**. Position, size and unchecked cards ar
 
 <table>
 <tr>
-<td align="center" width="50%"><img src="docs/witch-style.png" width="240" alt="Witch's cauldron style"><br><b>Witch's cauldron</b></td>
-<td align="center" width="50%"><img src="docs/claude-codex-style.png" width="240" alt="Claude + Codex style"><br><b>Claude + Codex</b></td>
+<td align="center" width="25%"><img src="docs/witch-style.png" width="200" alt="Witch's cauldron style"><br><b>Witch's cauldron</b></td>
+<td align="center" width="25%"><img src="docs/claude-codex-style.png" width="200" alt="Claude + Codex style"><br><b>Claude + Codex</b></td>
+<td align="center" width="25%"><img src="docs/apple-glass-style.png" width="200" alt="Apple glass rings style"><br><b>Apple · Liquid Glass</b></td>
+<td align="center" width="25%"><img src="docs/crystal-ball-style.png" width="200" alt="Witch's crystal ball style"><br><b>Witch's crystal ball</b></td>
 </tr>
 </table>
 
