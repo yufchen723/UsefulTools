@@ -29,9 +29,9 @@ Task { @MainActor in
         for scale in [0.8, 1.0, 1.5] {
             orb.setScale(CGFloat(scale))
             orb.setTasks(fixture)
-            for style in ["classic", "witch", "dual", "classic", "dual", "witch"] {
+            for style in ["classic", "witch", "dual", "apple", "nature", "classic", "crystal", "dual", "witch", "nature", "apple"] {
                 orb.setStyle(style)
-                orb.send(["status":"ok", "session":["pct":42], "week":["pct":59], "codex": style == "dual" ? ["session":NSNull(), "week":["pct":2]] : NSNull()])
+                orb.send(["status":"ok", "session":["pct":42], "week":["pct":59], "codex": codexStyles.contains(style) ? ["session":NSNull(), "week":["pct":2]] : NSNull()])
                 try await Task.sleep(nanoseconds: 80_000_000)
                 if style == "witch" {
                     check(try await evaluate("getComputedStyle(document.querySelector('[data-id=running] .t1')).fontSize") as? String == "12px", "Chinese title font size")
@@ -39,25 +39,25 @@ Task { @MainActor in
                 }
                 let result = try await evaluate("""
                 (() => {
-                  const cards = [...document.querySelectorAll('.task')];
+                  const cards = [...document.querySelectorAll('.task,.skc')];
                   if (cards.map(c=>c.dataset.id).join(',') !== 'permission,done,running') throw Error('cards lost or reordered');
                   for (const card of cards) {
-                    const target=card.querySelector('.btn') || card.querySelector('.txt');
+                    const target=card.querySelector('.btn,.skb') || card.querySelector('.txt,.skt');
                     const r=target.getBoundingClientRect();
                     const actual=JSON.parse(window.orbClickAt(r.x+r.width/2,r.y+r.height/2));
                     const expected=card.dataset.id==='done'?'check':card.dataset.id==='permission'?'permit':'open';
                     if(actual.id!==card.dataset.id || actual.action!==expected) throw Error('hit target changed');
                   }
-                  if(!cards[2].querySelector('.t2').textContent.includes('Since')) throw Error('running timer lost');
-                  if(!cards[1].querySelector('.t2').textContent.includes('30s')) throw Error('done duration changed');
-                  const r=cards[2].querySelector('.txt').getBoundingClientRect();
+                  if(!cards[2].querySelector('.t2,.sk2').textContent.includes('1m')) throw Error('running timer lost');
+                  if(!cards[1].querySelector('.t2,.sk2').textContent.includes('30s')) throw Error('done duration changed');
+                  const r=cards[2].querySelector('.txt,.skt').getBoundingClientRect();
                   return {x:r.x+r.width/2,y:r.y+r.height/2,bottom:cards[2].getBoundingClientRect().bottom,
                     top:document.getElementById('tasks').getBoundingClientRect().top};
                 })()
                 """) as! [String: Any]
                 check(orb.quad == (style == "dual"), "native layout mode")
-
-                check(abs((result["top"] as! Double) - (style == "dual" ? 206 : 180)) < 1, "task top")
+                
+                check(abs((result["top"] as! Double) - (orbGeometry(style).area + 2)) < 1, "task top")
                 check((result["bottom"] as! Double) * scale <= orb.panel.frame.height + 1, "cards clipped")
                 let point = NSPoint(x:(result["x"] as! Double)*scale,y:orb.overlay.bounds.height-(result["y"] as! Double)*scale)
                 let hit: (String,String) = await withCheckedContinuation { continuation in
@@ -71,18 +71,18 @@ Task { @MainActor in
         // Style filtering must preserve hidden tasks and size the native panel from visible cards.
         var desktop = fixture[0]; desktop["id"] = "codex-desktop"; desktop["kind"] = "codex-desktop"
         var cli = fixture[1]; cli["id"] = "codex-cli"; cli["kind"] = "codex-local"
-        for style in ["dual", "classic", "witch", "dual"] {
+        for style in ["dual", "classic", "apple", "witch", "nature", "crystal", "dual"] {
             orb.setStyle(style)
             orb.setTasks(fixture + [desktop, cli])
-            check(try await evaluate("document.querySelectorAll('.task').length") as? Int == (style == "dual" ? 5 : 3), "provider filtering")
-            check(try await evaluate("document.querySelectorAll('.task.codex').length") as? Int == (style == "dual" ? 2 : 0), "hidden Codex cards")
+            check(try await evaluate("document.querySelectorAll('.task,.skc').length") as? Int == (codexStyles.contains(style) ? 5 : 3), "provider filtering")
+            check(try await evaluate("document.querySelectorAll('.task.codex,.skc.codex').length") as? Int == (codexStyles.contains(style) ? 2 : 0), "hidden Codex cards")
         }
         orb.setTasks([desktop, cli])
         orb.setStyle("classic")
-        check(try await evaluate("document.querySelectorAll('.task').length") as? Int == 0, "Codex-only list hidden")
+        check(try await evaluate("document.querySelectorAll('.task,.skc').length") as? Int == 0, "Codex-only list hidden")
         let emptyHeight = orb.panel.frame.height
         orb.setStyle("dual")
-        check(try await evaluate("document.querySelectorAll('.task').length") as? Int == 2, "hidden tasks restored without polling")
+        check(try await evaluate("document.querySelectorAll('.task,.skc').length") as? Int == 2, "hidden tasks restored without polling")
         check(orb.panel.frame.height > emptyHeight, "native height follows visible task count")
         print("PASS: Claude-only hides desktop and CLI Codex tasks; dual restores cached tasks immediately")
 
@@ -90,7 +90,7 @@ Task { @MainActor in
         var visualCases = 0
         for scale in [0.6, 0.8, 1.0, 1.25, 1.5, 2.5] {
             orb.setScale(CGFloat(scale))
-            for style in ["classic", "witch", "dual"] {
+            for style in ["classic", "witch", "dual", "apple", "crystal"] {
                 orb.setStyle(style)
                 for count in [0, 1, 3, 5, 6] {
                     let cards = (0..<count).map { index -> [String: Any] in
@@ -111,7 +111,7 @@ Task { @MainActor in
                             if(tr.left<r.left-1 || tr.right>r.right+1 || tr.top<r.top-1 || tr.bottom>r.bottom+1) throw Error('time outside pill '+p.id);
                             if(r.left < -1 || r.right > innerWidth+1) throw Error('pill outside window');
                           }
-                          const cards=[...document.querySelectorAll('.task')];
+                          const cards=[...document.querySelectorAll('.task,.skc')];
                           if(cards.length>5) throw Error('card cap');
                           const more=document.getElementById('more');
                           const bottom=more?rect(more).bottom:cards.length?rect(cards.at(-1)).bottom:0;
@@ -142,7 +142,7 @@ Task { @MainActor in
                 }
             }
         }
-        print("PASS: \(visualCases) visual cases: 3 styles, 6 scales, 5 task counts, hover on/off; complete dates fit; overflow counter and error/login/loading states")
+        print("PASS: \(visualCases) visual cases: 5 styles, 6 scales, 5 task counts, hover on/off; complete dates fit; overflow counter and error/login/loading states")
         orb.setTasks(fixture)
         // Updates after switching still replace state and dismiss cards normally.
         var updated = fixture
@@ -150,9 +150,9 @@ Task { @MainActor in
         orb.setTasks(updated)
         check(try await evaluate("document.querySelector('[data-id=running]').classList.contains('done')") as? Bool == true, "completion after switch")
         orb.setTasks([fixture[2]])
-        check(try await evaluate("document.querySelectorAll('.task').length") as? Int == 1, "dismissal after switch")
+        check(try await evaluate("document.querySelectorAll('.task,.skc').length") as? Int == 1, "dismissal after switch")
         orb.setTasks([])
-        check(try await evaluate("document.querySelectorAll('.task').length") as? Int == 0, "empty cards")
+        check(try await evaluate("document.querySelectorAll('.task,.skc').length") as? Int == 0, "empty cards")
         print("PASS: \(cases) native WebKit style/scale transitions; card identity/status, timers, button hit tests, native click coordinates, clipping, completion, dismissal and empty state")
         app.terminate(nil)
     } catch { print("FAIL: \(error)"); exit(1) }

@@ -11,7 +11,9 @@ import SQLite3
 let kFrameName   = "ClaudeUsageOrbFrame"
 let kScaleKey    = "ClaudeUsageOrbScale"
 let kHiddenKey   = "ClaudeUsageOrbHidden"
-let kStyleKey    = "ClaudeUsageOrbStyle"     // "classic" | "witch" | "dual"
+let kStyleKey    = "ClaudeUsageOrbStyle"     // "classic" | "witch" | "nature" | "dual" | "apple" | "apple-liquid" | "crystal"
+let kDockKey     = "ClaudeUsageOrbDocked"    // orb collapsed into a capsule at the top-right screen edge; expands on hover
+let kAutoExpandKey = "ClaudeUsageOrbDockAutoExpand"   // docked capsule expands by itself when a chat waits for permission (default on)
 let kAgentLabel  = "com.yufan.claude-usage-orb"
 let refreshEvery: TimeInterval = 60
 let minScale: CGFloat = 0.6
@@ -32,8 +34,12 @@ final class OrbOverlay: NSView {
     var onResize: ((CGFloat) -> Void)?          // multiplicative size change
     var isOrbArea: ((NSPoint) -> Bool)?         // point in view coords → true if over the orb
     var onCardClick: ((NSPoint) -> Void)?       // point in view coords, task-card area
+    var onDragMoved: (() -> Void)?              // the window was just moved by a drag
+    var onDragEnded: (() -> Void)?
     private var tracking: NSTrackingArea?
     private var pendingCardClick: NSPoint?
+    private var dragOrigin: NSPoint?            // window origin at mouse-down, while dragging
+    private var dragMouse = NSPoint.zero        // screen position of the mouse at mouse-down
 
     // Scroll up / swipe up on the orb = bigger, down = smaller.
     override func scrollWheel(with event: NSEvent) {
@@ -68,12 +74,21 @@ final class OrbOverlay: NSView {
         if isOrbArea?(p) ?? true {
             pendingCardClick = nil
             if event.clickCount >= 2 { onDoubleClick?(); return }
-            window?.performDrag(with: event)
+            // Dragged by hand (not performDrag) so the dock can watch the drag and snap at the corner.
+            dragOrigin = window?.frame.origin
+            dragMouse = NSEvent.mouseLocation
         } else {
             pendingCardClick = p
         }
     }
+    override func mouseDragged(with event: NSEvent) {
+        guard let o = dragOrigin, let w = window else { return }
+        let m = NSEvent.mouseLocation
+        w.setFrameOrigin(NSPoint(x: o.x + m.x - dragMouse.x, y: o.y + m.y - dragMouse.y))
+        onDragMoved?()
+    }
     override func mouseUp(with event: NSEvent) {
+        if dragOrigin != nil { dragOrigin = nil; onDragEnded?(); return }
         guard let start = pendingCardClick else { return }
         pendingCardClick = nil
         let p = convert(event.locationInWindow, from: nil)
@@ -85,6 +100,8 @@ final class OrbOverlay: NSView {
 final class OrbPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+    // Let the panel hang past the screen edge (the docked capsule does) instead of being pushed back on.
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 }
 
 // MARK: - The floating orb window
@@ -96,6 +113,65 @@ let narrowWidth: CGFloat = 150
 let wideWidth: CGFloat = 240            // when task cards are showing
 let cardStep: CGFloat = 50              // card height 44 + gap 6
 let maxCards = 5
+
+/// Window geometry (CSS px) per style — must match the layout in orb.html.
+struct OrbGeometry { let area: CGFloat; let center: CGFloat; let narrow: CGFloat; let step: CGFloat }
+let orbStyles = ["classic", "witch", "nature", "dual", "apple", "apple-liquid", "crystal"]
+let codexStyles: Set<String> = ["dual", "apple", "apple-liquid", "crystal"]     // styles that show Codex next to Claude
+func orbGeometry(_ style: String) -> OrbGeometry {
+    switch style {
+    case "dual":    return OrbGeometry(area: orbAreaHeight + codexExtraHeight, center: orbCenterFromTop + codexExtraHeight, narrow: narrowWidth, step: cardStep)
+    case "apple", "apple-liquid":
+                    return OrbGeometry(area: 244, center: 152, narrow: 190, step: 53)   // legend + 2×2 glass pills + 176-px ring orb; cards 46 + gap 7
+    case "crystal": return OrbGeometry(area: 298, center: 166, narrow: 224, step: 53)   // legend + pills + 220-px astrolabe, ball and stand
+    default:        return OrbGeometry(area: orbAreaHeight, center: orbCenterFromTop, narrow: narrowWidth, step: cardStep)
+    }
+}
+
+// MARK: - Native glass for the Apple style
+//
+// A transparent WKWebView can only blur its own content, never the desktop behind the window. So the page reports
+// the rectangles of its glass shapes (pills, ring disc, cards) and real system material views are placed under the
+// web view at exactly those spots: NSGlassEffectView (Liquid Glass, macOS 26+) or a behind-window NSVisualEffectView
+// (the frosted material of sidebars and notification banners). The page then paints only the content on top.
+
+let liquidGlassAvailable = NSClassFromString("NSGlassEffectView") != nil
+
+/// Behind-window blur with a rounded / circular shape. maskImage (not layer masking) is what clips a
+/// behind-window material reliably.
+final class FrostGlassView: NSVisualEffectView {
+    var corner: CGFloat = -1 {
+        didSet {
+            guard abs(corner - oldValue) > 0.01 else { return }
+            let r = max(0, corner), edge = 2 * r + 1
+            let img = NSImage(size: NSSize(width: edge, height: edge), flipped: false) { rect in
+                NSColor.black.set()
+                NSBezierPath(roundedRect: rect, xRadius: r, yRadius: r).fill()
+                return true
+            }
+            img.capInsets = NSEdgeInsets(top: r, left: r, bottom: r, right: r)
+            img.resizingMode = .stretch
+            maskImage = img
+        }
+    }
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        material = .popover            // the adaptive light/dark frosted material used by popovers and notification banners
+        blendingMode = .behindWindow
+        state = .active
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+/// Forwards page messages without WKUserContentController retaining the controller.
+final class WeakScriptHandler: NSObject, WKScriptMessageHandler {
+    weak var target: OrbWindowController?
+    init(_ target: OrbWindowController) { self.target = target }
+    func userContentController(_ c: WKUserContentController, didReceive message: WKScriptMessage) {
+        target?.receiveGlass(message.body)
+    }
+}
 
 final class OrbWindowController: NSObject, WKNavigationDelegate {
     let panel: OrbPanel
@@ -109,14 +185,24 @@ final class OrbWindowController: NSObject, WKNavigationDelegate {
     private var taskCount = 0
     private var hovering = false
     private var zoomWork: DispatchWorkItem?
-    private(set) var style: String = UserDefaults.standard.string(forKey: kStyleKey) ?? "classic"
-    private(set) var quad = false            // Claude + Codex mode: taller orb area
-    private var areaHeight: CGFloat { orbAreaHeight + (quad ? codexExtraHeight : 0) }
-    private var centerFromTop: CGFloat { orbCenterFromTop + (quad ? codexExtraHeight : 0) }
+    var onHoverChanged: ((Bool) -> Void)?    // the dock watches this to collapse the peeked orb
+    var onRelayout: (() -> Void)?            // the window just changed size (style, scale, task cards)
+    private(set) var style: String
+    private(set) var layoutStyle: String     // the style whose geometry the window currently has
+    var quad: Bool { layoutStyle == "dual" }
+    private var geom: OrbGeometry { orbGeometry(layoutStyle) }
+    private var areaHeight: CGFloat { geom.area }
+    private var centerFromTop: CGFloat { geom.center }
 
     init(scale: CGFloat) {
         self.scale = scale
-        let size = NSSize(width: narrowWidth * scale, height: orbAreaHeight * scale)
+        var saved = UserDefaults.standard.string(forKey: kStyleKey) ?? "witch"
+        if saved == "apple-frost" { saved = "apple-liquid" }      // retired style
+        let startStyle = orbStyles.contains(saved) ? saved : "witch"
+        style = startStyle
+        layoutStyle = startStyle
+        let g = orbGeometry(startStyle)
+        let size = NSSize(width: g.narrow * scale, height: g.area * scale)
         panel = OrbPanel(contentRect: NSRect(origin: .zero, size: size),
                          styleMask: [.borderless, .nonactivatingPanel],
                          backing: .buffered, defer: false)
@@ -148,6 +234,7 @@ final class OrbWindowController: NSObject, WKNavigationDelegate {
 
         super.init()
         webView.navigationDelegate = self
+        webView.configuration.userContentController.add(WeakScriptHandler(self), name: "orbGlass")
         if let url = Bundle.main.url(forResource: "orb", withExtension: "html") {
             webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         }
@@ -155,6 +242,7 @@ final class OrbWindowController: NSObject, WKNavigationDelegate {
         overlay.onHover = { [weak self] h in
             self?.hovering = h
             self?.js("window.orbHover && window.orbHover(\(h))")
+            self?.onHoverChanged?(h)
         }
         overlay.isOrbArea = { [weak self] p in
             guard let self = self else { return true }
@@ -194,19 +282,20 @@ final class OrbWindowController: NSObject, WKNavigationDelegate {
         let old = panel.frame
         let shown = min(taskCount, maxCards)
         var h = areaHeight
-        if taskCount > 0 { h += 2 + CGFloat(shown) * cardStep + (taskCount > maxCards ? 18 : 0) }
-        let w = taskCount > 0 ? wideWidth : narrowWidth
+        if taskCount > 0 { h += 2 + CGFloat(shown) * geom.step + (taskCount > maxCards ? 18 : 0) }
+        let w = taskCount > 0 ? wideWidth : geom.narrow
         let size = NSSize(width: w * scale, height: h * scale)
         let orbCenterY = old.maxY - (oldCenterFromTop ?? centerFromTop) * oldScale
         let top = orbCenterY + centerFromTop * scale
         panel.setFrame(NSRect(x: old.midX - size.width / 2, y: top - size.height, width: size.width, height: size.height), display: true)
+        onRelayout?()
     }
 
-    /// Switch between the Claude-only layout and the Claude + Codex layout (taller pill area).
-    func setQuad(_ on: Bool) {
-        guard on != quad else { return }
+    /// Resize the window for the selected style's geometry, keeping the orb's centre fixed on screen.
+    func applyLayout() {
+        guard layoutStyle != style else { return }
         let oldCenter = centerFromTop
-        quad = on
+        layoutStyle = style
         relayout(oldScale: scale, oldCenterFromTop: oldCenter)
         ensureOnScreen()
     }
@@ -222,14 +311,17 @@ final class OrbWindowController: NSObject, WKNavigationDelegate {
         zoomWork = w
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: w)
         UserDefaults.standard.set(Double(s), forKey: kScaleKey)
+        layoutGlass()
     }
 
     func setStyle(_ s: String) {
-        guard ["classic", "witch", "dual"].contains(s) else { return }
+        guard orbStyles.contains(s) else { return }
         style = s
-        setQuad(s == "dual")
+        applyLayout()
         UserDefaults.standard.set(s, forKey: kStyleKey)
         js("window.orbStyle && window.orbStyle('\(s)')")
+        js("window.orbNativeGlass && window.orbNativeGlass('\(effectiveGlass)')")
+        layoutGlass()
         setTasks(allTasks)
     }
 
@@ -244,7 +336,7 @@ final class OrbWindowController: NSObject, WKNavigationDelegate {
         allTasks = tasks
         let tasks = tasks.filter { task in
             let kind = task["kind"] as? String ?? "chat"
-            return style == "dual" || (kind != "codex-local" && kind != "codex-desktop")
+            return codexStyles.contains(style) || (kind != "codex-local" && kind != "codex-desktop")
         }
         guard let data = try? JSONSerialization.data(withJSONObject: tasks),
               let s = String(data: data, encoding: .utf8) else { return }
@@ -273,6 +365,58 @@ final class OrbWindowController: NSObject, WKNavigationDelegate {
         webView.evaluateJavaScript(code, completionHandler: nil)
     }
 
+    // MARK: native glass (Apple style)
+
+    /// Material under the Apple style's glass shapes, chosen by the style itself:
+    /// apple-liquid → Liquid Glass (macOS 26+, else the frosted system material), apple → painted by the page.
+    var effectiveGlass: String {
+        style == "apple-liquid" ? (liquidGlassAvailable ? "liquid" : "frost") : "painted"
+    }
+    private var glassRects: [[CGFloat]] = []      // CSS px: x, y, w, h, corner radius
+    private var glassViews: [NSView] = []
+    private var glassBuiltFor = ""
+
+    func receiveGlass(_ body: Any) {
+        guard let list = body as? [[NSNumber]] else { return }
+        glassRects = list.map { $0.map { CGFloat($0.doubleValue) } }
+        layoutGlass()
+    }
+
+    private func makeGlassView(_ mode: String) -> NSView {
+        if mode == "liquid", let cls = NSClassFromString("NSGlassEffectView") as? NSObject.Type,
+           let v = cls.init() as? NSView {
+            return v                    // looked up at runtime so the app still builds with pre-macOS 26 SDKs
+        }
+        return FrostGlassView(frame: .zero)
+    }
+
+    /// Place one material view under each glass shape the page reported (bottom-left origin, scaled by page zoom).
+    func layoutGlass() {
+        guard let host = panel.contentView else { return }
+        let mode = effectiveGlass
+        let rects = mode == "painted" ? [] : glassRects.filter { $0.count >= 5 }
+        if glassBuiltFor != mode {
+            glassViews.forEach { $0.removeFromSuperview() }
+            glassViews = []
+            glassBuiltFor = mode
+        }
+        while glassViews.count < rects.count {
+            let v = makeGlassView(mode)
+            v.autoresizingMask = [.minYMargin, .minXMargin, .maxXMargin]   // stay pinned to the top, centred
+            host.addSubview(v, positioned: .below, relativeTo: webView)
+            glassViews.append(v)
+        }
+        while glassViews.count > rects.count { glassViews.removeLast().removeFromSuperview() }
+        let height = host.bounds.height
+        for (v, r) in zip(glassViews, rects) {
+            let f = NSRect(x: r[0] * scale, y: height - (r[1] + r[3]) * scale, width: r[2] * scale, height: r[3] * scale)
+            v.frame = f
+            let corner = min(r[4] * scale, f.width / 2, f.height / 2)
+            if let frost = v as? FrostGlassView { frost.corner = corner }
+            else if v.responds(to: NSSelectorFromString("setCornerRadius:")) { v.setValue(corner, forKey: "cornerRadius") }
+        }
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         pageLoaded = true
         js("window.orbStyle && window.orbStyle('\(style)')")
@@ -280,7 +424,573 @@ final class OrbWindowController: NSObject, WKNavigationDelegate {
         if let p = lastPayload { js("window.orbUpdate && window.orbUpdate(\(p))") }
         if let t = lastTasks { js("window.orbTasks && window.orbTasks(\(t))") }
         if hovering { js("window.orbHover && window.orbHover(true)") }
+        js("window.orbNativeGlass && window.orbNativeGlass('\(effectiveGlass)')")
     }
+}
+
+// MARK: - Docked mode
+//
+// Three forms of the same object (Dynamic Island-style), never a window pushed half off the screen:
+//   floating – the orb as it has always been
+//   docked   – a 12×64 pt capsule glued to the top-right screen edge, carrying one fill bar per tool (5-hour session)
+//   peek     – the full orb, temporarily grown out of the capsule in that corner; collapses when the pointer leaves
+// Dock by dragging the orb into the corner (a ghost capsule previews the snap) or from the menu; undock by dragging
+// the peeked orb away. A chat waiting for permission pulses the capsule blue and may expand it by itself for 4 s.
+
+enum CapsuleMetrics {                        // CSS pt, multiplied by the orb's scale
+    static let width: CGFloat = 12, height: CGFloat = 64, radius: CGFloat = 6
+    static let hitLeft: CGFloat = 8, hitVert: CGFloat = 6     // invisible hit padding (HIG: 24 pt minimum target)
+    static let topInset: CGFloat = 12                         // from the menu bar
+    static let bar: CGFloat = 3, barGap: CGFloat = 2, barInset: CGFloat = 6
+    static let peekCorner: CGFloat = 28                       // radius the bridge glass grows to
+    static let magnet: CGFloat = 40                           // drag the orb this close to the corner to dock
+    static let undockDrag: CGFloat = 40                       // drag the peeked orb this far to undock
+}
+
+/// Which look the capsule wears, derived from the orb style.
+struct CapsuleLook {
+    let dark: Bool
+    let claude: NSColor
+    let codex: NSColor
+    let glow: NSColor?
+    static func forStyle(_ style: String) -> CapsuleLook {
+        switch style {
+        case "witch", "crystal":
+            return CapsuleLook(dark: true, claude: NSColor(srgbRed: 1.0, green: 0.70, blue: 0.48, alpha: 1),
+                               codex: NSColor(srgbRed: 0.56, green: 0.85, blue: 1.0, alpha: 1),
+                               glow: NSColor(srgbRed: 0.65, green: 0.41, blue: 1.0, alpha: 0.45))
+        default:
+            return CapsuleLook(dark: false, claude: NSColor(srgbRed: 0.85, green: 0.47, blue: 0.34, alpha: 1),
+                               codex: NSColor(srgbRed: 0.11, green: 0.56, blue: 0.75, alpha: 1), glow: nil)
+        }
+    }
+    /// Usage colour: the tool's own colour, systemOrange from 80 %, systemRed when the window is used up.
+    func fill(_ tool: NSColor, _ fraction: CGFloat) -> NSColor {
+        fraction >= 0.999 ? .systemRed : fraction >= 0.8 ? .systemOrange : tool
+    }
+}
+
+/// The capsule's content: one or two vertical fill bars, an optional badge, and a pulse overlay.
+final class CapsuleBarsView: NSView {
+    var claude: CGFloat? = 0                  // 0…1, nil = not shown
+    var codex: CGFloat? = nil
+    var look = CapsuleLook.forStyle("classic")
+    var scale: CGFloat = 1
+    var badge = false { didSet { needsDisplay = true } }
+    private let pulseLayer = CALayer()
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        pulseLayer.backgroundColor = NSColor.systemBlue.cgColor
+        pulseLayer.opacity = 0
+        layer?.addSublayer(pulseLayer)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override var isFlipped: Bool { false }
+
+    override func layout() {
+        super.layout()
+        pulseLayer.frame = bounds
+        pulseLayer.cornerRadius = CapsuleMetrics.radius * scale
+        pulseLayer.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
+    }
+
+    func pulse(_ color: NSColor, times: Int = 2) {
+        pulseLayer.backgroundColor = color.cgColor
+        let a = CAKeyframeAnimation(keyPath: "opacity")
+        a.values = [0, 0.55, 0]
+        a.keyTimes = [0, 0.4, 1]
+        a.duration = 0.55
+        a.repeatCount = Float(times)
+        pulseLayer.add(a, forKey: "pulse")
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let s = scale
+        let bars: [(CGFloat, NSColor)] = [(claude, look.claude), (codex, look.codex)].compactMap { v, c in v.map { ($0, c) } }
+        guard !bars.isEmpty else { return }
+        let bw = CapsuleMetrics.bar * s, gap = CapsuleMetrics.barGap * s
+        let total = CGFloat(bars.count) * bw + CGFloat(bars.count - 1) * gap
+        var x = (CapsuleMetrics.width * s - total) / 2
+        let y0 = CapsuleMetrics.barInset * s
+        let h = bounds.height - 2 * y0
+        for (fraction, tool) in bars {
+            let track = NSRect(x: x, y: y0, width: bw, height: h)
+            (look.dark ? NSColor.white.withAlphaComponent(0.14) : NSColor.black.withAlphaComponent(0.12)).setFill()
+            NSBezierPath(roundedRect: track, xRadius: bw / 2, yRadius: bw / 2).fill()
+            let fh = max(bw, h * min(1, max(0, fraction)))
+            let fill = look.fill(tool, fraction)
+            if look.dark {
+                NSGraphicsContext.saveGraphicsState()
+                let sh = NSShadow(); sh.shadowColor = fill.withAlphaComponent(0.85); sh.shadowBlurRadius = 4 * s
+                sh.set()
+                fill.setFill()
+                NSBezierPath(roundedRect: NSRect(x: x, y: y0, width: bw, height: fh), xRadius: bw / 2, yRadius: bw / 2).fill()
+                NSGraphicsContext.restoreGraphicsState()
+            } else {
+                fill.setFill()
+                NSBezierPath(roundedRect: NSRect(x: x, y: y0, width: bw, height: fh), xRadius: bw / 2, yRadius: bw / 2).fill()
+            }
+            x += bw + gap
+        }
+        if badge {
+            // 4 pt green dot at the top, ringed so it reads on any wallpaper.
+            let d = 4 * s, ring = 1.5 * s
+            let r = NSRect(x: CapsuleMetrics.width * s - d - 1.5 * s, y: bounds.height - d - 1.5 * s, width: d, height: d)
+            (look.dark ? NSColor(srgbRed: 0.09, green: 0.05, blue: 0.18, alpha: 0.95) : NSColor.white.withAlphaComponent(0.95)).setFill()
+            NSBezierPath(ovalIn: r.insetBy(dx: -ring, dy: -ring)).fill()
+            NSColor.systemGreen.setFill()
+            NSBezierPath(ovalIn: r).fill()
+        }
+    }
+}
+
+/// Glass with every corner rounded (the right corners sit past the screen edge, so the capsule reads as flush).
+final class CapsuleGlassView: NSView {
+    private let frost = FrostGlassView(frame: .zero)
+    private var liquid: NSView?
+    private let tint = NSView()
+    var corner: CGFloat = 6 { didSet { applyCorner() } }
+    var dark = false { didSet { applyLook() } }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        if liquidGlassAvailable, let cls = NSClassFromString("NSGlassEffectView") as? NSObject.Type, let v = cls.init() as? NSView {
+            liquid = v
+            addSubview(v)
+        } else {
+            addSubview(frost)
+        }
+        tint.wantsLayer = true
+        addSubview(tint)
+        applyLook()
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func layout() {
+        super.layout()
+        (liquid ?? frost).frame = bounds
+        tint.frame = bounds
+        applyCorner()
+    }
+    private func applyCorner() {
+        frost.corner = corner
+        if let v = liquid, v.responds(to: NSSelectorFromString("setCornerRadius:")) { v.setValue(corner, forKey: "cornerRadius") }
+        tint.layer?.cornerRadius = corner
+    }
+    private func applyLook() {
+        // Dark styles: a deep violet tint with an inner purple glow over the system material; light styles: a hairline highlight.
+        if dark {
+            tint.layer?.backgroundColor = NSColor(srgbRed: 0.09, green: 0.05, blue: 0.18, alpha: 0.55).cgColor
+            tint.layer?.borderColor = NSColor(srgbRed: 0.80, green: 0.67, blue: 1.0, alpha: 0.38).cgColor
+            tint.layer?.borderWidth = 1
+            tint.layer?.shadowColor = NSColor(srgbRed: 0.65, green: 0.41, blue: 1.0, alpha: 1).cgColor
+            tint.layer?.shadowOpacity = 0.5
+            tint.layer?.shadowRadius = 6
+            tint.layer?.shadowOffset = .zero
+            tint.layer?.masksToBounds = false
+            frost.material = .hudWindow
+        } else {
+            tint.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.10).cgColor
+            tint.layer?.borderColor = NSColor.white.withAlphaComponent(0.55).cgColor
+            tint.layer?.borderWidth = 1
+            tint.layer?.shadowOpacity = 0
+            frost.material = .popover
+        }
+    }
+}
+
+final class DockController {
+    enum State { case floating, docked, peek }
+    private(set) var state: State = .floating
+    unowned let orb: OrbWindowController
+    let panel: OrbPanel                       // the capsule window; also hosts the morphing bridge glass
+    private let glass = CapsuleGlassView(frame: .zero)
+    private let bars = CapsuleBarsView(frame: .zero)
+    private let tracker = CapsuleHitView(frame: .zero)
+    private var hoverIntent: DispatchWorkItem?
+    private var collapseWork: DispatchWorkItem?
+    private var autoCollapse: DispatchWorkItem?
+    private var anim: Timer?
+    private var clickMonitor: Any?
+    private var ghost = false
+    private var dockedScreenID: NSNumber?
+    private var orbHovering = false
+    private var capsuleHovering = false
+    var onStateChange: (() -> Void)?
+    var hidden = false { didSet { if hidden != oldValue { refreshVisibility() } } }
+    var autoExpand: Bool {
+        get { UserDefaults.standard.object(forKey: kAutoExpandKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: kAutoExpandKey) }
+    }
+    private var scale: CGFloat { orb.scale }
+    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+
+    init(orb: OrbWindowController) {
+        self.orb = orb
+        panel = OrbPanel(contentRect: NSRect(x: 0, y: 0, width: 40, height: 80), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.isFloatingPanel = true
+        panel.level = .floating
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        let host = NSView(frame: panel.contentView!.bounds)
+        host.wantsLayer = true
+        host.addSubview(glass)
+        glass.addSubview(bars)
+        host.addSubview(tracker)
+        panel.contentView = host
+        tracker.onHover = { [weak self] h in self?.capsuleHover(h) }
+        tracker.onClick = { [weak self] in self?.expand(reason: .click) }
+        tracker.setAccessibilityElement(true)
+        tracker.setAccessibilityRole(.button)
+        tracker.setAccessibilityHelp("Shows the usage orb")
+
+        orb.onHoverChanged = { [weak self] h in self?.orbHover(h) }
+        orb.onRelayout = { [weak self] in self?.relayout() }
+        orb.overlay.onDragMoved = { [weak self] in self?.dragMoved() }
+        orb.overlay.onDragEnded = { [weak self] in self?.dragEnded() }
+        applyStyle(orb.style)
+    }
+
+    // MARK: geometry
+
+    private var screen: NSScreen {
+        if let id = dockedScreenID, let s = NSScreen.screens.first(where: { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber) == id }) { return s }
+        return NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main ?? NSScreen.screens[0]
+    }
+    private func rememberScreen() {
+        dockedScreenID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+    }
+    /// Visible glass of the capsule, in screen coordinates (its right corners hang past the edge).
+    private var capsuleGlassRect: NSRect {
+        let s = scale, scr = screen
+        let w = (CapsuleMetrics.width + CapsuleMetrics.radius) * s, h = CapsuleMetrics.height * s
+        let top = scr.visibleFrame.maxY - CapsuleMetrics.topInset * s
+        return NSRect(x: scr.frame.maxX - CapsuleMetrics.width * s, y: top - h, width: w, height: h)
+    }
+    /// The capsule window: glass plus hit padding.
+    private var capsuleWindowRect: NSRect {
+        let s = scale, g = capsuleGlassRect
+        return NSRect(x: g.minX - CapsuleMetrics.hitLeft * s, y: g.minY - CapsuleMetrics.hitVert * s,
+                      width: g.width + CapsuleMetrics.hitLeft * s, height: g.height + 2 * CapsuleMetrics.hitVert * s)
+    }
+    /// Where the orb sits while peeked: hugging the corner the capsule lives in.
+    private var peekFrame: NSRect {
+        let size = orb.panel.frame.size, vf = screen.visibleFrame
+        return NSRect(x: vf.maxX - size.width, y: vf.maxY - CapsuleMetrics.topInset * scale - size.height, width: size.width, height: size.height)
+    }
+
+    private func layoutCapsule() {
+        let wr = capsuleWindowRect
+        panel.setFrame(wr, display: false)
+        let g = capsuleGlassRect
+        glass.frame = NSRect(x: g.minX - wr.minX, y: g.minY - wr.minY, width: g.width, height: g.height)
+        glass.corner = CapsuleMetrics.radius * scale
+        glass.alphaValue = ghost ? 0.55 : 1
+        bars.frame = NSRect(x: 0, y: 0, width: CapsuleMetrics.width * scale, height: g.height)
+        bars.scale = scale
+        bars.isHidden = ghost
+        bars.needsDisplay = true
+        tracker.frame = panel.contentView!.bounds
+    }
+
+    func relayout() {
+        switch state {
+        case .docked: if anim == nil { layoutCapsule() }
+        case .peek:   if anim == nil { orb.panel.setFrame(peekFrame, display: true); orb.layoutGlass() }
+        case .floating: if ghost { layoutCapsule() }
+        }
+    }
+
+    func applyStyle(_ style: String) {
+        let look = CapsuleLook.forStyle(style)
+        bars.look = look
+        glass.dark = look.dark
+        bars.needsDisplay = true
+    }
+
+    // MARK: data
+
+    func update(claude: Double?, codex: Double?, showCodex: Bool) {
+        // An unknown value still gets its (empty) track, so the capsule keeps its two-bar shape while Codex loads.
+        bars.claude = CGFloat(claude ?? 0) / 100
+        bars.codex = showCodex ? CGFloat(codex ?? 0) / 100 : nil
+        bars.needsDisplay = true
+        let f: (Double?) -> String = { $0.map { "\(Int($0.rounded())) percent" } ?? "unknown" }
+        tracker.setAccessibilityLabel("Claude usage \(f(claude))" + (showCodex ? ", Codex usage \(f(codex))" : ""))
+    }
+
+    /// Something finished: show the badge until the orb is next seen.
+    func noteFinished() { if state == .docked { bars.badge = true } }
+
+    /// A chat is waiting for permission: pulse, and (if allowed) show the orb for a few seconds.
+    func notePermissionRequest() {
+        guard state == .docked, !hidden else { return }
+        bars.pulse(.systemBlue)
+        guard autoExpand else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            guard let self = self, self.state == .docked else { return }
+            self.expand(reason: .event)
+        }
+    }
+
+    // MARK: state changes
+
+    func dock(animated: Bool) {
+        guard state != .docked else { return }
+        rememberScreen()
+        hoverIntent?.cancel(); collapseWork?.cancel(); autoCollapse?.cancel()
+        UserDefaults.standard.set(true, forKey: kDockKey)
+        ghost = false
+        if animated && !reduceMotion && orb.isVisible {
+            morph(toCapsule: true, from: orb.panel.frame)
+        } else {
+            state = .docked
+            orb.hide()
+            layoutCapsule()
+            if reduceMotion { panel.alphaValue = 0; panel.orderFrontRegardless(); fade(panel, to: 1) } else { refreshVisibility() }
+        }
+        onStateChange?()
+    }
+
+    /// Back to a free orb, left wherever it is now.
+    func undock() {
+        guard state != .floating else { return }
+        hoverIntent?.cancel(); collapseWork?.cancel(); autoCollapse?.cancel()
+        stopAnim()
+        UserDefaults.standard.set(false, forKey: kDockKey)
+        let wasDocked = state == .docked
+        state = .floating
+        ghost = false
+        panel.orderOut(nil)
+        panel.alphaValue = 1
+        bars.badge = false
+        orb.panel.alphaValue = 1
+        if wasDocked {
+            orb.panel.setFrame(peekFrame, display: false)
+            if !hidden { orb.show() }
+        }
+        onStateChange?()
+    }
+
+    enum ExpandReason { case hover, click, event }
+    func expand(reason: ExpandReason) {
+        guard state == .docked, !hidden else { return }
+        hoverIntent?.cancel()
+        bars.badge = false
+        orb.panel.setFrame(peekFrame, display: false)
+        morph(toCapsule: false, from: peekFrame)
+        if reason == .event {
+            let w = DispatchWorkItem { [weak self] in
+                guard let self = self, self.state == .peek, !self.orbHovering else { return }
+                self.collapse()
+            }
+            autoCollapse = w
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0, execute: w)
+        }
+    }
+
+    func collapse() {
+        guard state == .peek else { return }
+        collapseWork?.cancel(); autoCollapse?.cancel()
+        morph(toCapsule: true, from: orb.panel.frame)
+    }
+
+    func toggleDocked() { state == .floating ? dock(animated: true) : undock() }
+
+    private func refreshVisibility() {
+        switch state {
+        case .floating: panel.orderOut(nil); if hidden { orb.hide() } else { orb.show() }
+        case .docked:   orb.hide(); if hidden { panel.orderOut(nil) } else { panel.orderFrontRegardless() }
+        case .peek:     if hidden { collapse() }
+        }
+    }
+
+    // MARK: hover
+
+    private func capsuleHover(_ h: Bool) {
+        capsuleHovering = h
+        guard state == .docked else { return }
+        hoverIntent?.cancel()
+        if h {
+            let w = DispatchWorkItem { [weak self] in self?.expand(reason: .hover) }
+            hoverIntent = w
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: w)      // hover intent, not a pass-through
+        }
+    }
+
+    private func orbHover(_ h: Bool) {
+        orbHovering = h
+        guard state == .peek else { return }
+        collapseWork?.cancel()
+        if !h {
+            let w = DispatchWorkItem { [weak self] in
+                guard let self = self, self.state == .peek, !self.orbHovering, self.orb.overlay.window != nil else { return }
+                if NSEvent.pressedMouseButtons != 0 { self.orbHover(false); return }   // mid-drag: check again later
+                self.collapse()
+            }
+            collapseWork = w
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: w)        // the Dock's own hide delay
+        }
+    }
+
+    // MARK: dragging the orb
+
+    private func dragMoved() {
+        let f = orb.panel.frame, s = scale
+        switch state {
+        case .floating:
+            let vf = screen.visibleFrame
+            let dx = vf.maxX - f.maxX, dy = vf.maxY - f.maxY
+            let near = abs(dx) < CapsuleMetrics.magnet * s && abs(dy) < CapsuleMetrics.magnet * s
+            if near != ghost {
+                ghost = near
+                if near { dockedScreenID = nil; rememberScreen(); layoutCapsule(); panel.alphaValue = 0; panel.orderFrontRegardless(); fade(panel, to: 1, duration: 0.12) }
+                else { fade(panel, to: 0, duration: 0.12) { [weak self] in if self?.ghost == false { self?.panel.orderOut(nil) } } }
+            }
+        case .peek:
+            let p = peekFrame
+            if hypot(f.minX - p.minX, f.minY - p.minY) >= CapsuleMetrics.undockDrag * s { undock() }
+        case .docked: break
+        }
+    }
+
+    private func dragEnded() {
+        if state == .floating && ghost { dock(animated: true) }
+        else if state == .peek { orb.panel.setFrame(peekFrame, display: true); orb.layoutGlass() }   // a small nudge snaps back
+    }
+
+    // MARK: the morph between capsule and orb
+
+    private func stopAnim() { anim?.invalidate(); anim = nil }
+
+    private func fade(_ w: NSWindow, to alpha: CGFloat, duration: TimeInterval = 0.15, done: (() -> Void)? = nil) {
+        NSAnimationContext.runAnimationGroup({ ctx in ctx.duration = duration; w.animator().alphaValue = alpha }, completionHandler: done)
+    }
+
+    /// Grow the capsule's glass into the orb's frame while the orb fades in (or the reverse). The glass is a bridge: it
+    /// fades out once the orb is there, so every orb style keeps its own look.
+    private func morph(toCapsule: Bool, from orbFrame: NSRect) {
+        stopAnim()
+        let s = scale
+        let capG = capsuleGlassRect
+        let orbG = orbFrame
+        let union = capsuleWindowRect.union(orbFrame).insetBy(dx: -8 * s, dy: -8 * s)
+        panel.setFrame(union, display: false)
+        tracker.frame = .zero                       // no hover events from the bridge itself
+        ghost = false
+        bars.isHidden = false
+        bars.alphaValue = toCapsule ? 0 : 1
+        panel.alphaValue = 1
+        panel.orderFrontRegardless()
+        orb.panel.alphaValue = toCapsule ? 1 : 0
+        if !toCapsule { orb.show() }
+        state = toCapsule ? .docked : .peek
+        onStateChange?()
+
+        if reduceMotion {
+            // Crossfade only.
+            layoutCapsuleInBridge(rect: toCapsule ? capG : orbG, corner: toCapsule ? CapsuleMetrics.radius * s : CapsuleMetrics.peekCorner * s, in: union)
+            glass.alphaValue = toCapsule ? 0 : 1
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.15
+                self.glass.animator().alphaValue = toCapsule ? 1 : 0
+                self.bars.animator().alphaValue = toCapsule ? 1 : 0
+                self.orb.panel.animator().alphaValue = toCapsule ? 0 : 1
+            }, completionHandler: { [weak self] in self?.finishMorph(toCapsule: toCapsule) })
+            return
+        }
+
+        let duration: TimeInterval = toCapsule ? 0.22 : 0.32
+        let t0 = CACurrentMediaTime()
+        anim = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] timer in
+            guard let self = self else { timer.invalidate(); return }
+            let raw = min(1, (CACurrentMediaTime() - t0) / duration)
+            // ease-out cubic for the frame (a settled spring), with the content following in the second half
+            let p = CGFloat(1 - pow(1 - raw, 3))
+            let grow = toCapsule ? 1 - p : p             // 0 = capsule, 1 = orb
+            let rect = NSRect(x: capG.minX + (orbG.minX - capG.minX) * grow,
+                              y: capG.minY + (orbG.minY - capG.minY) * grow,
+                              width: capG.width + (orbG.width - capG.width) * grow,
+                              height: capG.height + (orbG.height - capG.height) * grow)
+            let corner = (CapsuleMetrics.radius + (CapsuleMetrics.peekCorner - CapsuleMetrics.radius) * grow) * s
+            self.layoutCapsuleInBridge(rect: rect, corner: corner, in: union)
+            let content = Self.smooth((grow - 0.4) / 0.6)   // orb visible over the last 60 %
+            self.orb.panel.alphaValue = content
+            self.glass.alphaValue = 1 - Self.smooth((grow - 0.6) / 0.4)
+            self.bars.alphaValue = 1 - Self.smooth(grow / 0.3)
+            if raw >= 1 { timer.invalidate(); self.anim = nil; self.finishMorph(toCapsule: toCapsule) }
+        }
+    }
+
+    private static func smooth(_ x: CGFloat) -> CGFloat { let t = min(1, max(0, x)); return t * t * (3 - 2 * t) }
+
+    private func layoutCapsuleInBridge(rect: NSRect, corner: CGFloat, in windowRect: NSRect) {
+        glass.frame = NSRect(x: rect.minX - windowRect.minX, y: rect.minY - windowRect.minY, width: rect.width, height: rect.height)
+        glass.corner = corner
+        bars.frame = NSRect(x: 0, y: 0, width: CapsuleMetrics.width * scale, height: rect.height)
+        bars.scale = scale
+    }
+
+    private func finishMorph(toCapsule: Bool) {
+        if toCapsule {
+            orb.hide()
+            orb.panel.alphaValue = 1
+            glass.alphaValue = 1
+            bars.alphaValue = 1
+            layoutCapsule()
+            if hidden { panel.orderOut(nil) }
+            removeClickMonitor()
+        } else {
+            orb.panel.alphaValue = 1
+            orb.layoutGlass()
+            panel.orderOut(nil)
+            glass.alphaValue = 1
+            bars.alphaValue = 1
+            installClickMonitor()
+            if !orbHovering && !capsuleHovering && autoCollapse == nil { orbHover(false) }   // pointer already gone: start the hide delay
+        }
+    }
+
+    // A click anywhere else while peeked collapses the orb (there is no key focus for Escape).
+    private func installClickMonitor() {
+        removeClickMonitor()
+        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            guard let self = self, self.state == .peek, !self.orb.panel.frame.contains(NSEvent.mouseLocation) else { return }
+            self.collapse()
+        }
+    }
+    private func removeClickMonitor() {
+        if let m = clickMonitor { NSEvent.removeMonitor(m) }
+        clickMonitor = nil
+    }
+}
+
+/// Transparent hit view of the capsule: hover intent and click.
+final class CapsuleHitView: NSView {
+    var onHover: ((Bool) -> Void)?
+    var onClick: (() -> Void)?
+    private var tracking: NSTrackingArea?
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let t = tracking { removeTrackingArea(t) }
+        let t = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self, userInfo: nil)
+        addTrackingArea(t)
+        tracking = t
+    }
+    override func mouseEntered(with event: NSEvent) { onHover?(true) }
+    override func mouseExited(with event: NSEvent) { onHover?(false) }
+    override func mouseDown(with event: NSEvent) { onClick?() }
+    override func accessibilityPerformPress() -> Bool { onClick?(); return true }
 }
 
 // MARK: - Usage source 1: claude.ai web session (same numbers as Settings → Usage)
@@ -1055,7 +1765,10 @@ final class CodexDesktopSessions {
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var orb: OrbWindowController!
+    var dock: DockController!
     let web = WebSession(site: .claude)
+    var permissionIDs = Set<String>()        // chats already seen waiting for permission
+    var doneIDs = Set<String>()              // chats already seen finished
     var statusItem: NSStatusItem!
     var timer: Timer?
     var refreshing = false
@@ -1079,7 +1792,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var codexFetching = false
     var lastClaudePayload: [String: Any]?
     var codexLoginProcess: Process?
-    var codexWanted: Bool { orb.style == "dual" }
+    var codexWanted: Bool { codexStyles.contains(orb.style) }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMainMenu()
@@ -1097,7 +1810,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self = self else { return }
             NSMenu.popUpContextMenu(self.makeMenu(), with: e, for: self.orb.overlay)
         }
-        if !UserDefaults.standard.bool(forKey: kHiddenKey) { orb.show() }
+        dock = DockController(orb: orb)
+        dock.onStateChange = { [weak self] in self?.updateStatusIcon() }
+        dock.hidden = UserDefaults.standard.bool(forKey: kHiddenKey)
+        if UserDefaults.standard.bool(forKey: kDockKey) { dock.dock(animated: false) }
+        else if !dock.hidden { orb.show() }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         updateStatusIcon()
@@ -1122,7 +1839,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         web.invalidate()
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.refresh() }
     }
-    @objc func screensChanged() { orb.ensureOnScreen() }
+    @objc func screensChanged() { if dock.state == .floating { orb.ensureOnScreen() } else { dock.relayout() } }
 
     // MARK: data
 
@@ -1206,8 +1923,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func pushUsage() {
         var p = lastClaudePayload ?? ["status": "loading"]
         p["codex"] = codexWanted ? codexPayload : NSNull()
-        orb.setQuad(codexWanted)
+        orb.applyLayout()
         orb.send(p)
+        dock.update(claude: lastOK == nil ? nil : lastSession, codex: lastCodexSession, showCodex: codexWanted)
     }
 
     // MARK: chat activity
@@ -1226,6 +1944,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let d = try? JSONEncoder().encode(tasks) { UserDefaults.standard.set(d, forKey: kTasksKey) }
     }
     func pushTasks() {
+        // Tell the docked capsule about new permission requests and newly finished chats.
+        let perm = Set(tasks.filter { $0.state == "permission" }.map { $0.id })
+        let done = Set(tasks.filter { $0.state == "done" }.map { $0.id })
+        if !perm.subtracting(permissionIDs).isEmpty { dock.notePermissionRequest() }
+        if !done.subtracting(doneIDs).isEmpty { dock.noteFinished() }
+        permissionIDs = perm
+        doneIDs = done
         orb.setTasks(tasks.map { t in
             var o: [String: Any] = ["id": t.id, "title": t.title, "state": t.state, "bucket": t.bucket, "startedAt": t.startedAt, "kind": t.kind ?? "chat"]
             if let e = t.endedAt { o["endedAt"] = e }
@@ -1447,7 +2172,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         m.addItem(.separator())
         add(m, "Refresh now", #selector(refresh), "r")
-        add(m, orb.isVisible ? "Hide orb" : "Show orb", #selector(toggleOrb))
+        add(m, dock.hidden ? "Show orb" : "Hide orb", #selector(toggleOrb))
+        let dockItem = add(m, "Dock to top-right edge", #selector(toggleDock), "d")
+        dockItem.state = dock.state == .floating ? .off : .on
+        if dock.state != .floating {
+            let ae = add(m, "Expand by itself when a chat needs permission", #selector(toggleAutoExpand))
+            ae.state = dock.autoExpand ? .on : .off
+            ae.indentationLevel = 1
+        }
         let sizeItem = NSMenuItem(title: "Size", action: nil, keyEquivalent: "")
         let sm = NSMenu()
         let tip = NSMenuItem(title: "Tip: scroll or pinch on the orb to resize", action: nil, keyEquivalent: "")
@@ -1468,7 +2200,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         m.addItem(sizeItem)
         let styleItem = NSMenuItem(title: "Style", action: nil, keyEquivalent: "")
         let stm = NSMenu()
-        for (title, key) in [("Classic orb — Claude only", "classic"), ("Witch's cauldron 🎃 — Claude only", "witch"), ("Claude + Codex", "dual")] {
+        for (title, key) in [("Classic orb — Claude only", "classic"), ("Witch's cauldron 🎃 — Claude only", "witch"), ("Nature 🔬 — Claude only", "nature"), ("Claude + Codex", "dual"),
+                             ("Apple · Liquid Glass — Claude + Codex", "apple-liquid"),
+                             ("Apple · Painted glass — Claude + Codex", "apple"),
+                             ("Witch's crystal ball 🔮 — Claude + Codex", "crystal")] {
             let it = NSMenuItem(title: title, action: #selector(pickStyle(_:)), keyEquivalent: "")
             it.target = self
             it.representedObject = key
@@ -1498,8 +2233,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func toggleOrb() {
-        if orb.isVisible { orb.hide() } else { orb.show() }
-        UserDefaults.standard.set(!orb.isVisible, forKey: kHiddenKey)
+        dock.hidden.toggle()
+        UserDefaults.standard.set(dock.hidden, forKey: kHiddenKey)
     }
     func resize(by f: CGFloat) {
         let s = min(maxScale, max(minScale, orb.scale * f))
@@ -1514,23 +2249,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func pickStyle(_ sender: NSMenuItem) {
         guard let key = sender.representedObject as? String else { return }
         orb.setStyle(key)
+        dock.applyStyle(key)
         pushUsage()
         refreshCodex()
         updateStatusIcon()
     }
     func updateStatusIcon() {
         guard let b = statusItem?.button else { return }
-        let name = orb.style == "witch" ? "wand.and.stars" : "drop.halffull"
+        let name = orb.style == "witch" ? "wand.and.stars" : orb.style == "nature" ? "smallcircle.filled.circle" : orb.style == "crystal" ? "moon.stars" : orb.style.hasPrefix("apple") ? "circle.circle" : "drop.halffull"
         if let img = NSImage(systemSymbolName: name, accessibilityDescription: "Claude usage") {
             img.isTemplate = true
             b.image = img
             b.title = ""
         } else {
             b.image = nil
-            b.title = orb.style == "witch" ? "✦" : "◐"
+            b.title = orb.style == "witch" ? "✦" : orb.style == "nature" ? "◎" : orb.style == "crystal" ? "☾" : "◐"
         }
     }
-    @objc func resetPosition() { orb.placeDefault(); orb.show() }
+    @objc func resetPosition() {
+        if dock.state != .floating { dock.undock() }
+        orb.placeDefault()
+        dock.hidden = false
+        UserDefaults.standard.set(false, forKey: kHiddenKey)
+    }
+    @objc func toggleDock() {
+        if dock.hidden { dock.hidden = false; UserDefaults.standard.set(false, forKey: kHiddenKey) }
+        dock.toggleDocked()
+    }
+    @objc func toggleAutoExpand() { dock.autoExpand.toggle() }
     @objc func quit() { NSApp.terminate(nil) }
 
     @objc func toggleLaunchAtLogin() {
